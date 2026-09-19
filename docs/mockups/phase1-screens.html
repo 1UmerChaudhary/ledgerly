@@ -1,0 +1,414 @@
+<title>Ledgerly Screens</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --paper:#F4F6F2; --surface:#FFFFFF; --ink:#1A2320; --ink-2:#4C5852; --ink-3:#7A867F;
+  --rule:#C9D0C8; --rule-soft:#E3E8E1; --accent:#2456A4; --accent-soft:#E4ECF9;
+  --recv:#1F7A4D; --recv-soft:#E2F1E8; --give:#B04A22; --give-soft:#F7E7DE;
+  --focus:#2456A4; --sel:#EEF3FB; --keybar:#1A2320; --keybar-ink:#E8EDE8;
+  --shadow:0 1px 2px rgba(26,35,32,.08),0 8px 24px rgba(26,35,32,.08);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#151B1E; --surface:#1C2428; --ink:#E6EBE8; --ink-2:#B4BEB8; --ink-3:#7F8B85;
+    --rule:#33403C; --rule-soft:#26312E; --accent:#7FA6E8; --accent-soft:#1E2C41;
+    --recv:#5FC08D; --recv-soft:#16302400; --give:#E58A63; --give-soft:#3A241900;
+    --focus:#7FA6E8; --sel:#233042; --keybar:#0E1214; --keybar-ink:#D6DDD8;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.4);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#151B1E; --surface:#1C2428; --ink:#E6EBE8; --ink-2:#B4BEB8; --ink-3:#7F8B85;
+  --rule:#33403C; --rule-soft:#26312E; --accent:#7FA6E8; --accent-soft:#1E2C41;
+  --recv:#5FC08D; --recv-soft:#16302400; --give:#E58A63; --give-soft:#3A241900;
+  --focus:#7FA6E8; --sel:#233042; --keybar:#0E1214; --keybar-ink:#D6DDD8;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:14px/1.45 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;padding-inline:16px;padding-block:24px 48px}
+.num,.mono{font-family:"IBM Plex Mono","SFMono-Regular",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+h1{font-size:22px;font-weight:600;letter-spacing:-.01em;margin:0}
+.lede{color:var(--ink-2);max-width:62ch;margin:6px 0 0}
+.top{max-width:1200px;margin:0 auto 16px}
+.switch{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+.switch button{font:inherit;font-size:13px;background:var(--surface);color:var(--ink-2);border:1px solid var(--rule);border-radius:4px;padding:6px 10px;cursor:pointer;display:flex;gap:8px;align-items:center}
+.switch button .k{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-3)}
+.switch button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.switch button[aria-pressed="true"] .k{color:var(--paper);opacity:.7}
+.switch button:focus-visible,.win :focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.note{font-size:12px;color:var(--ink-3);margin-top:10px}
+.frame{max-width:1200px;margin:0 auto;overflow-x:auto}
+.win{width:1200px;height:720px;background:var(--surface);border:1px solid var(--rule);border-radius:6px;box-shadow:var(--shadow);display:grid;grid-template-rows:40px 1fr 38px;grid-template-columns:96px 1fr;overflow:hidden}
+.titlebar{grid-column:1/3;display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid var(--rule-soft);font-size:13px}
+.titlebar .firm{font-weight:600}
+.titlebar .status{color:var(--ink-2);display:flex;gap:18px}
+.titlebar .ok{color:var(--recv)}
+.rail{border-right:1px solid var(--rule-soft);padding:12px 8px;display:flex;flex-direction:column;gap:4px}
+.rail a{display:grid;grid-template-columns:22px 1fr;align-items:center;gap:6px;padding:7px 8px;border-radius:4px;color:var(--ink-2);text-decoration:none;font-size:12.5px;cursor:pointer}
+.rail a .k{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-3);border:1px solid var(--rule);border-radius:3px;text-align:center;line-height:18px}
+.rail a[aria-current="page"]{background:var(--accent-soft);color:var(--accent)}
+.rail a[aria-current="page"] .k{border-color:var(--accent);color:var(--accent)}
+.content{position:relative;overflow:hidden}
+.screen{position:absolute;inset:0;padding:18px 22px;display:none;overflow:auto}
+.screen.on{display:block}
+.keybar{grid-column:1/3;background:var(--keybar);color:var(--keybar-ink);display:flex;align-items:center;gap:22px;padding:0 16px;font-size:12.5px;overflow:hidden;white-space:nowrap}
+.keybar b{font-family:"IBM Plex Mono",monospace;font-weight:500;background:rgba(255,255,255,.12);padding:1px 6px;border-radius:3px;margin-right:6px}
+.eyebrow{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+h2{font-size:18px;font-weight:600;margin:0;letter-spacing:-.01em;text-wrap:balance}
+.row{display:flex;align-items:center;gap:12px}
+.between{justify-content:space-between}
+.search{display:flex;align-items:center;gap:10px;border:1px solid var(--rule);border-radius:4px;padding:8px 12px;background:var(--surface);margin:14px 0 16px}
+.search input{border:0;outline:0;background:transparent;font:inherit;font-size:15px;color:var(--ink);flex:1}
+.search .k{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-3)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.panel{border:1px solid var(--rule);border-radius:4px;overflow:hidden}
+.panel header{display:flex;justify-content:space-between;align-items:baseline;padding:10px 14px;border-bottom:1px solid var(--rule)}
+.panel header .sum{font-size:20px;font-weight:500}
+.recv .sum,.recv .eyebrow{color:var(--recv)} .give .sum,.give .eyebrow{color:var(--give)}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+td,th{padding:7px 14px;text-align:left;border-bottom:1px solid var(--rule-soft)}
+th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+td.num,th.num{text-align:right}
+tr.sel td{background:var(--sel);box-shadow:inset 3px 0 0 var(--accent)}
+.more{color:var(--ink-3);font-size:12.5px;padding:8px 14px}
+.strip{margin-top:16px;padding:10px 14px;border-top:1px solid var(--rule);color:var(--ink-2);font-size:13px;display:flex;gap:26px}
+.form{display:grid;grid-template-columns:130px 1fr;gap:10px 14px;align-items:center;max-width:520px}
+.form label{color:var(--ink-2)}
+.field{border:1px solid var(--rule);border-radius:4px;padding:7px 10px;background:var(--surface);min-height:34px;display:flex;align-items:center;gap:8px;position:relative}
+.field.focus{border-color:var(--focus);box-shadow:0 0 0 2px var(--accent-soft)}
+.field .hint{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-3)}
+.field .caret{display:inline-block;width:1px;height:16px;background:var(--ink);animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+@media (prefers-reduced-motion: reduce){.field .caret{animation:none}}
+.drop{position:absolute;top:calc(100% + 4px);left:0;min-width:300px;background:var(--surface);border:1px solid var(--rule);border-radius:4px;box-shadow:var(--shadow);z-index:3;font-size:13px}
+.drop div{padding:7px 10px;display:flex;justify-content:space-between;gap:16px}
+.drop .hi{background:var(--sel);box-shadow:inset 3px 0 0 var(--accent)}
+.drop .create{color:var(--accent);border-top:1px dashed var(--rule)}
+.grid{margin-top:16px;border:1px solid var(--rule);border-radius:4px;overflow:hidden}
+.grid td,.grid th{padding:6px 10px}
+.grid td.cell{border-right:1px solid var(--rule-soft)}
+.grid td.edit{background:var(--sel);box-shadow:inset 0 0 0 2px var(--focus)}
+.grid td.blank{color:var(--ink-3)}
+.totals{display:grid;grid-template-columns:1fr 300px;gap:12px;margin-top:14px;align-items:end}
+.totals dl{margin:0;display:grid;grid-template-columns:1fr auto;gap:6px 18px;font-size:13.5px}
+.totals dt{color:var(--ink-2)} .totals dd{margin:0;text-align:right}
+.totals .final{font-size:20px;font-weight:500;border-top:1px solid var(--ink);padding-top:6px}
+.balance-line{color:var(--ink-2);font-size:13.5px;padding:10px 12px;background:var(--paper);border-radius:4px}
+.balance-line b{color:var(--ink);font-weight:500}
+.saved{margin-top:14px;padding:12px 14px;border-radius:4px;background:var(--recv-soft);border:1px solid var(--recv);color:var(--ink);display:flex;gap:14px;align-items:center;font-size:13.5px}
+.saved .tick{width:20px;height:20px;border-radius:50%;background:var(--recv);color:#fff;display:grid;place-items:center;font-size:12px}
+.badge{font-size:11px;padding:1px 6px;border-radius:3px;background:var(--accent-soft);color:var(--accent);font-weight:500;margin-left:6px;vertical-align:middle}
+.badge.warn{background:var(--give-soft);color:var(--give)}
+.ledger{display:grid;grid-template-columns:1fr 330px;gap:16px;height:calc(100% - 44px);margin-top:14px}
+.ledger .panel{overflow:auto}
+.detail{border:1px solid var(--rule);border-radius:4px;padding:14px;overflow:auto;font-size:13px}
+.detail h3{margin:0 0 8px;font-size:13px;font-weight:600}
+.detail dl{margin:0;display:grid;grid-template-columns:1fr auto;gap:4px 12px}
+.detail dd{margin:0;text-align:right}
+.hist{margin-top:14px;border-top:1px solid var(--rule);padding-top:10px}
+.ver{padding:8px 10px;border-radius:4px;margin-bottom:6px;border:1px solid var(--rule-soft)}
+.ver.sel{border-color:var(--accent);background:var(--sel)}
+.ver .who{color:var(--ink-3);font-size:12px}
+.diff{margin-top:6px;display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:12.5px}
+.diff .old{text-decoration:line-through;color:var(--ink-3)} .diff .new{color:var(--give);font-weight:500}
+.slipwrap{display:grid;grid-template-columns:320px 1fr;gap:24px;margin-top:14px;align-items:start}
+.slip{width:300px;background:#FFFDF7;color:#1A1A1A;padding:16px 14px;font-family:"IBM Plex Mono",monospace;font-size:12px;line-height:1.5;box-shadow:var(--shadow);border-radius:2px;position:relative}
+.slip .c{text-align:center} .slip hr{border:0;border-top:1px dashed #999;margin:6px 0}
+.slip .r{display:flex;justify-content:space-between} .slip .big{font-size:14px;font-weight:600}
+.slip::after{content:"";position:absolute;left:0;right:0;bottom:-8px;height:8px;background:linear-gradient(135deg,transparent 50%,#FFFDF7 50%) 0 0/12px 8px repeat-x}
+.settings{display:grid;grid-template-columns:200px 1fr;gap:0 24px;margin-top:14px;height:calc(100% - 40px)}
+.settings nav a{display:block;padding:8px 10px;border-radius:4px;color:var(--ink-2);cursor:pointer}
+.settings nav a[aria-current="true"]{background:var(--accent-soft);color:var(--accent)}
+.settings .form{max-width:600px}
+.toggle{display:inline-flex;gap:6px;align-items:center;font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-2)}
+.toggle i{width:28px;height:16px;border-radius:8px;background:var(--rule);position:relative;display:inline-block}
+.toggle i.on{background:var(--accent)} .toggle i::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff} .toggle i.on::after{left:14px}
+.center{height:100%;display:grid;place-items:center}
+.center .card{width:560px}
+.btn{display:inline-flex;gap:10px;align-items:center;background:var(--accent);color:#fff;border-radius:4px;padding:9px 14px;font-weight:500}
+.btn .k{font-family:"IBM Plex Mono",monospace;font-size:11px;opacity:.8}
+.ghost{color:var(--accent);margin-top:18px;font-size:13.5px}
+.explain{max-width:1200px;margin:22px auto 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.explain div{border-top:2px solid var(--rule);padding-top:10px;font-size:13px;color:var(--ink-2)}
+.explain b{color:var(--ink);display:block;margin-bottom:4px}
+@media (max-width:700px){.frame{border-radius:6px}.explain{grid-template-columns:1fr}}
+</style>
+
+<div class="top">
+  <h1>Ledgerly Screens</h1>
+  <p class="lede">Clickable mockups of the phase-1 desktop app. The window below answers to the real shortcuts: try <span class="mono">Ctrl+N</span>, <span class="mono">Ctrl+Enter</span>, <span class="mono">Esc</span>, <span class="mono">↑ ↓ Enter</span>. Click inside the window first so it has focus.</p>
+  <div class="switch" role="tablist" aria-label="Screens">
+    <button role="tab" data-go="launch"><span class="k">1</span>First launch</button>
+    <button role="tab" data-go="dash" aria-pressed="true"><span class="k">2</span>Dashboard</button>
+    <button role="tab" data-go="bill"><span class="k">3</span>New sale</button>
+    <button role="tab" data-go="saved"><span class="k">4</span>Saved</button>
+    <button role="tab" data-go="ledger"><span class="k">5</span>Customer ledger</button>
+    <button role="tab" data-go="cash"><span class="k">6</span>Cash received</button>
+    <button role="tab" data-go="slip"><span class="k">7</span>Slip</button>
+    <button role="tab" data-go="settings"><span class="k">8</span>Settings</button>
+  </div>
+  <p class="note">All figures are example data for an imaginary oil mill. Amounts in rupees, Pakistani grouping; weights in kg; rates per base weight (37.324 kg = 1 maund, 40 kg).</p>
+</div>
+
+<div class="frame">
+<div class="win" id="win" tabindex="0" aria-label="Ledgerly application window">
+  <div class="titlebar">
+    <span class="firm">Al-Madina Oil Mills</span>
+    <span class="status"><span>Device <span class="mono">A3F9</span></span><span class="ok">Backed up today 09:12 ✓</span></span>
+  </div>
+  <nav class="rail" aria-label="Sections">
+    <a data-go="dash" aria-current="page"><span class="k">D</span>Dashboard</a>
+    <a data-go="ledger"><span class="k">C</span>Customers</a>
+    <a><span class="k">I</span>Items</a>
+    <a><span class="k">S</span>Cash sales</a>
+    <a data-go="settings"><span class="k">,</span>Settings</a>
+  </nav>
+  <div class="content">
+
+    <!-- 1 First launch -->
+    <section class="screen" id="s-launch">
+      <div class="center"><div class="card">
+        <span class="eyebrow">Welcome</span>
+        <h2>Set up your firm</h2>
+        <p class="lede" style="margin-bottom:18px">This appears once. You can change everything later in Settings.</p>
+        <div class="form">
+          <label>Firm name</label><div class="field focus">Al-Madina Oil Mills<span class="caret"></span></div>
+          <label>Contact number</label><div class="field"><span style="color:var(--ink-3)">0300-1234567</span></div>
+          <label>Address</label><div class="field"><span style="color:var(--ink-3)">optional</span></div>
+          <label>Backup folder</label><div class="field mono">D:\LedgerlyBackups<span class="hint">Browse</span></div>
+        </div>
+        <div style="margin-top:22px" class="row"><span class="btn">Create firm <span class="k">Ctrl+Enter</span></span></div>
+        <div class="ghost">Already have a backup? Restore from backup <span class="mono">R</span></div>
+      </div></div>
+    </section>
+
+    <!-- 2 Dashboard -->
+    <section class="screen on" id="s-dash">
+      <div class="search"><span>🔍</span><input id="q" placeholder="Search customer by name or phone… misspellings are fine" aria-label="Search customer"><span class="k">Ctrl+F</span></div>
+      <div class="two">
+        <div class="panel recv">
+          <header><span class="eyebrow">Receivable · they owe you</span><span class="sum num" id="sum-recv"></span></header>
+          <table id="t-recv"><tbody></tbody></table>
+          <div class="more" id="more-recv"></div>
+        </div>
+        <div class="panel give">
+          <header><span class="eyebrow">Giveable · you owe them</span><span class="sum num" id="sum-give"></span></header>
+          <table id="t-give"><tbody></tbody></table>
+          <div class="more" id="more-give"></div>
+        </div>
+      </div>
+      <div class="strip"><span>Today</span><span><b class="num">6</b> bills</span><span>Sales <b class="num">Rs 3,45,000</b></span><span>Cash in <b class="num">Rs 80,000</b></span><span>Walk-in <b class="num">Rs 12,500</b></span></div>
+    </section>
+
+    <!-- 3 New sale -->
+    <section class="screen" id="s-bill">
+      <div class="row between"><div><span class="eyebrow">New sale</span><h2>Bill <span class="mono">A3F9-1044</span></h2></div><span class="mono" style="color:var(--ink-3)">18/09/2026</span></div>
+      <div class="form" style="margin-top:12px;max-width:none;grid-template-columns:90px 320px 70px 140px 110px 1fr">
+        <label>Customer</label>
+        <div class="field focus" id="cust-field">Rash<span class="caret"></span>
+          <div class="drop" id="drop">
+            <div class="hi"><span>Rashid Traders</span><span class="num" style="color:var(--recv)">6,20,000</span></div>
+            <div><span>Rasheed Bros</span><span class="num" style="color:var(--give)">35,000</span></div>
+            <div class="create"><span>+ Create “Rash”</span><span class="mono" style="font-size:11px">Ctrl+Enter</span></div>
+          </div>
+        </div>
+        <label>Date</label><div class="field mono">18/09/2026<span class="hint">T</span></div>
+        <label>Description</label><div class="field"><span style="color:var(--ink-3)">Sept supply</span></div>
+      </div>
+      <div class="grid"><table>
+        <thead><tr><th>#</th><th>Item</th><th>Mode</th><th class="num">Bags</th><th class="num">Bag kg</th><th class="num">Total kg</th><th class="num">Rate</th><th class="num">per kg</th><th class="num">Line total</th><th>✎</th></tr></thead>
+        <tbody>
+          <tr><td class="num">1</td><td class="cell">Oil</td><td class="cell mono">bags</td><td class="cell num">20</td><td class="cell num">16.000</td><td class="cell num">320.000</td><td class="cell num">9,000</td><td class="cell num">37.324</td><td class="num">77,164</td><td></td></tr>
+          <tr><td class="num">2</td><td class="cell">Oilcake</td><td class="cell mono">bags</td><td class="cell num">40</td><td class="cell num">50.000</td><td class="cell num">2,000.000</td><td class="cell num edit">2,400</td><td class="cell num">40</td><td class="num">1,20,000</td><td></td></tr>
+          <tr><td class="num blank">3</td><td class="cell blank" colspan="9">Enter on the last cell adds a line · Ctrl+Minus removes one · Space toggles bags ↔ weight · 1–5 picks base 30 / 34 / 37.324 / 40 / 56</td></tr>
+        </tbody>
+      </table></div>
+      <div class="totals">
+        <div class="balance-line">Rashid Traders owes <b class="num">Rs 6,20,000</b> → after this bill owes <b class="num">Rs 8,17,164</b></div>
+        <dl><dt>Calculated total</dt><dd class="num">1,97,164</dd><dt>Override total</dt><dd><span class="field" style="min-height:28px;padding:2px 8px;display:inline-flex;min-width:120px"></span></dd><dt class="final">Final</dt><dd class="num final">Rs 1,97,164</dd></dl>
+      </div>
+    </section>
+
+    <!-- 4 Saved -->
+    <section class="screen" id="s-saved">
+      <div class="row between"><div><span class="eyebrow">Sale</span><h2>Bill <span class="mono">A3F9-1044</span></h2></div><span class="mono" style="color:var(--ink-3)">18/09/2026 14:32</span></div>
+      <div class="saved"><span class="tick">✓</span><span>Saved. Rashid Traders now owes <b class="num">Rs 8,17,164</b>.</span><span style="margin-left:auto;color:var(--ink-2)">Ctrl+P print slip · Ctrl+N next bill · Esc ledger</span></div>
+      <div class="grid"><table>
+        <thead><tr><th>#</th><th>Item</th><th class="num">Bags</th><th class="num">Bag kg</th><th class="num">Total kg</th><th class="num">Rate</th><th class="num">per kg</th><th class="num">Line total</th></tr></thead>
+        <tbody>
+          <tr><td class="num">1</td><td>Oil</td><td class="num">20</td><td class="num">16.000</td><td class="num">320.000</td><td class="num">9,000</td><td class="num">37.324</td><td class="num">77,164</td></tr>
+          <tr><td class="num">2</td><td>Oilcake</td><td class="num">40</td><td class="num">50.000</td><td class="num">2,000.000</td><td class="num">2,400</td><td class="num">40</td><td class="num">1,20,000</td></tr>
+        </tbody>
+      </table></div>
+      <div class="totals"><div></div><dl><dt>Total</dt><dd class="num">1,97,164</dd><dt>Previous balance</dt><dd class="num">6,20,000</dd><dt class="final">Balance</dt><dd class="num final">Rs 8,17,164</dd></dl></div>
+    </section>
+
+    <!-- 5 Ledger -->
+    <section class="screen" id="s-ledger">
+      <div class="row between"><div><span class="eyebrow">Customer</span><h2>Rashid Traders <span class="mono" style="font-weight:400;color:var(--ink-3);font-size:14px">0300-9876543</span></h2></div><div style="text-align:right"><span class="eyebrow" style="color:var(--recv)">Owes</span><div class="num" style="font-size:22px;color:var(--recv)">Rs 8,17,164</div></div></div>
+      <div class="ledger">
+        <div class="panel"><table id="t-ledger">
+          <thead><tr><th>Date</th><th>No</th><th>Type</th><th>Description</th><th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th></tr></thead>
+          <tbody>
+            <tr><td class="num">01/09/26</td><td class="mono">A3F9-1021</td><td>Sale</td><td>Oil 25 tins</td><td class="num">2,10,000</td><td class="num"></td><td class="num">4,30,000</td></tr>
+            <tr><td class="num">05/09/26</td><td class="mono">A3F9-1030</td><td>Cash in</td><td>Cheque 4471</td><td class="num"></td><td class="num">1,00,000</td><td class="num">3,30,000</td></tr>
+            <tr class="sel"><td class="num">12/09/26</td><td class="mono">A3F9-1041</td><td>Sale <span class="badge">edited</span></td><td>Oil + oilcake</td><td class="num">2,90,000</td><td class="num"></td><td class="num">6,20,000</td></tr>
+            <tr><td class="num">18/09/26</td><td class="mono">A3F9-1044</td><td>Sale</td><td>Sept supply</td><td class="num">1,97,164</td><td class="num"></td><td class="num">8,17,164</td></tr>
+          </tbody>
+        </table></div>
+        <aside class="detail">
+          <h3>Bill <span class="mono">A3F9-1041</span> <span class="badge">edited v2</span> <span class="badge warn">total overridden</span></h3>
+          <dl><dt>Oil · 20 bags · 320 kg</dt><dd class="num">77,164</dd><dt>Oilcake · 40 bags · 2,000 kg</dt><dd class="num">1,20,000</dd><dt>Calculated</dt><dd class="num">1,97,164</dd><dt><b>Override</b></dt><dd class="num"><b>2,90,000</b></dd><dt>Printed</dt><dd>1×</dd></dl>
+          <div class="hist">
+            <h3>History</h3>
+            <div class="ver sel"><div class="row between"><span>v2 · edit</span><span class="who">today 11:05 · Shop PC</span></div>
+              <div class="diff"><span>Oilcake rate</span><span><span class="old num">2,000</span> → <span class="new num">2,400</span></span><span>Final</span><span><span class="old num">1,81,164</span> → <span class="new num">2,90,000</span></span></div></div>
+            <div class="ver"><div class="row between"><span>v1 · created</span><span class="who">12/09 16:40 · Shop PC</span></div></div>
+            <div class="ghost" style="margin-top:10px">R restores the selected version as a new v3</div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- 6 Cash -->
+    <section class="screen" id="s-cash">
+      <div class="center"><div class="card">
+        <span class="eyebrow">Cash received</span>
+        <h2>From a customer</h2>
+        <div class="form" style="margin-top:16px">
+          <label>Customer</label><div class="field">Ahmed &amp; Sons<span class="hint" style="color:var(--recv)">owes 4,15,500</span></div>
+          <label>Date</label><div class="field mono">18/09/2026<span class="hint">T · ↑↓ day · PgUp/PgDn month</span></div>
+          <label>Amount</label><div class="field focus num">1,00,000<span class="caret"></span></div>
+          <label>Note</label><div class="field"><span style="color:var(--ink-3)">Cheque 4521</span></div>
+        </div>
+        <div class="balance-line" style="margin-top:16px">After this, Ahmed &amp; Sons owes <b class="num">Rs 3,15,500</b></div>
+        <div style="margin-top:18px" class="row"><span class="btn">Save <span class="k">Ctrl+Enter</span></span><span style="color:var(--ink-3)">Same screen serves cash paid, opening balance, adjustment</span></div>
+      </div></div>
+    </section>
+
+    <!-- 7 Slip -->
+    <section class="screen" id="s-slip">
+      <span class="eyebrow">Print preview · 80 mm thermal</span>
+      <h2>Slip for bill <span class="mono">A3F9-1044</span></h2>
+      <div class="slipwrap">
+        <div class="slip">
+          <div class="c big">AL-MADINA OIL MILLS</div>
+          <div class="c">Main Road, Sahiwal</div>
+          <div class="c">0300-1234567</div>
+          <hr>
+          <div class="r"><span>SALE</span><span>Bill A3F9-1044</span></div>
+          <div class="r"><span>18/09/2026</span><span>14:32</span></div>
+          <div>Rashid Traders</div>
+          <hr>
+          <div>Oil        20 bg x 16.000 = 320.000 kg</div>
+          <div class="r"><span>  @ 9,000 / 37.324</span><span>77,164</span></div>
+          <div>Oilcake    40 bg x 50.000 = 2,000.000 kg</div>
+          <div class="r"><span>  @ 2,400 / 40</span><span>1,20,000</span></div>
+          <hr>
+          <div class="r big"><span>TOTAL</span><span>1,97,164</span></div>
+          <div class="r"><span>Previous balance</span><span>6,20,000</span></div>
+          <div class="r big"><span>BALANCE (owes)</span><span>8,17,164</span></div>
+          <div>as of 18/09/2026 14:32</div>
+          <hr>
+          <div class="r"><span>Printed 18/09/2026 14:33</span><span>A3F9</span></div>
+        </div>
+        <div class="explain" style="margin:0;grid-template-columns:1fr">
+          <div><b>Why “as of” is printed</b>A backdated entry synced later can change the running balance for that day. The slip states when its number was true, so paper and ledger can always be reconciled.</div>
+          <div><b>Why the device code is on it</b>Two devices number bills independently while offline. A3F9-1044 can never collide with the phone’s 7KQ2-1044.</div>
+          <div><b>Silent print</b>Ctrl+P after saving sends this straight to the saved thermal printer. No dialog. A4 ledgers ask for a date range first.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8 Settings -->
+    <section class="screen" id="s-settings">
+      <span class="eyebrow">Settings</span>
+      <h2>Al-Madina Oil Mills</h2>
+      <div class="settings">
+        <nav><a aria-current="true">Firm</a><a>Display</a><a>Printer</a><a>Backup</a><a>Language</a></nav>
+        <div>
+          <div class="form">
+            <label>Firm name</label><div class="field">Al-Madina Oil Mills</div>
+            <label>Contact</label><div class="field mono">0300-1234567</div>
+            <label>Address</label><div class="field">Main Road, Sahiwal</div>
+            <label>Show paisa</label><div><span class="toggle"><i></i>off · amounts shown as whole rupees</span></div>
+            <label>Grouping</label><div><span class="toggle"><i class="on"></i>12,34,567 (lakh / crore)</span></div>
+            <label>Printer</label><div class="field">Xprinter XP-80C<span class="hint">silent print on</span></div>
+            <label>Backup folder</label><div class="field mono">D:\LedgerlyBackups<span class="hint">last today 09:12 · Ctrl+B now</span></div>
+            <label>Restore</label><div class="ghost" style="margin:0">Restore from backup…</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+  <div class="keybar" id="keybar"></div>
+</div>
+</div>
+
+<div class="explain">
+  <div><b>Numbers are a different voice</b>Every figure, bill code and key hint is set in a mono face with tabular digits, so columns line up like a ruled register and the eye separates words from amounts instantly.</div>
+  <div><b>Green in, rust out</b>Receivable is green because money is coming toward the firm; giveable is rust. The same two colours mean the same two things on every screen and on the slip’s “owes” line.</div>
+  <div><b>The key bar teaches</b>The bottom bar always lists what the keyboard can do right now. Nobody reads a manual; they read the bar until their hands know it.</div>
+  <div><b>One primary action</b>Ctrl+Enter is always “commit this”. Esc is always “back one step”: close the dropdown, then ask before discarding, then leave the screen.</div>
+</div>
+
+<script>
+(function(){
+  const fmt = n => { // Pakistani grouping: 12,34,567
+    const s = String(Math.abs(n)); if (s.length <= 3) return (n<0?'-':'')+s;
+    const last3 = s.slice(-3); let rest = s.slice(0,-3).replace(/\B(?=(\d{2})+(?!\d))/g, ',');
+    return (n<0?'-':'') + rest + ',' + last3;
+  };
+  const recv = [['Rashid Traders',817164],['Ahmed & Sons',415500],['Bilal Oil Depot',310000],['Karim Store',205800],['Noor Ghee Agency',94000]];
+  const give = [['Sahiwal Seed Co.',280000],['Malik Farms',135000]];
+  const fill = (id, rows, moreN, cls) => {
+    const tb = document.querySelector('#'+id+' tbody'); tb.innerHTML='';
+    rows.forEach((r,i)=>{ const tr=document.createElement('tr'); if(cls==='recv'&&i===0) tr.className='sel';
+      tr.innerHTML = `<td>${r[0]}</td><td class="num" style="color:var(--${cls})">${fmt(r[1])}</td>`; tr.dataset.name=r[0]; tb.appendChild(tr); });
+    return rows.reduce((a,r)=>a+r[1],0);
+  };
+  document.getElementById('sum-recv').textContent = 'Rs ' + fmt(fill('t-recv', recv, 41, 'recv'));
+  document.getElementById('sum-give').textContent = 'Rs ' + fmt(fill('t-give', give, 3, 'give'));
+  document.getElementById('more-recv').textContent = '… 41 more';
+  document.getElementById('more-give').textContent = '… 3 more';
+
+  const keys = {
+    launch:'<span><b>Tab</b>next field</span><span><b>Ctrl+Enter</b>create firm</span><span><b>R</b>restore from backup</span>',
+    dash:'<span><b>↑↓</b>move</span><span><b>←→</b>switch table</span><span><b>Enter</b>open ledger</span><span><b>Ctrl+N</b>sale</span><span><b>Ctrl+Shift+N</b>purchase</span><span><b>Ctrl+I</b>cash in</span><span><b>Ctrl+O</b>cash out</span><span><b>Ctrl+F</b>search</span>',
+    bill:'<span><b>Tab</b>next cell</span><span><b>Enter</b>pick / next / new line</span><span><b>Space</b>bags↔weight</span><span><b>1–5</b>base weight</span><span><b>Ctrl+−</b>remove line</span><span><b>Ctrl+Enter</b>save</span><span><b>Esc</b>cancel</span>',
+    saved:'<span><b>Ctrl+P</b>print slip</span><span><b>Ctrl+N</b>next bill, same customer</span><span><b>Esc</b>open ledger</span>',
+    ledger:'<span><b>↑↓</b>move</span><span><b>F2</b>edit</span><span><b>Ctrl+P</b>print slip</span><span><b>Ctrl+Shift+P</b>print ledger</span><span><b>R</b>restore version</span><span><b>Del</b>delete</span><span><b>Esc</b>dashboard</span>',
+    cash:'<span><b>Tab</b>next</span><span><b>Ctrl+Enter</b>save</span><span><b>Esc</b>cancel</span>',
+    slip:'<span><b>Ctrl+P</b>print again</span><span><b>Esc</b>back</span>',
+    settings:'<span><b>↑↓</b>section</span><span><b>Tab</b>field</span><span><b>Ctrl+B</b>backup now</span><span><b>Esc</b>back</span>'
+  };
+  let cur = 'dash';
+  function go(id){
+    cur = id;
+    document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('on', s.id==='s-'+id));
+    document.querySelectorAll('.switch button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.go===id));
+    document.querySelectorAll('.rail a').forEach(a=>{ const on=(a.dataset.go===id)||(id==='dash'&&a.dataset.go==='dash'); a.toggleAttribute('aria-current', !!a.dataset.go && (a.dataset.go===id || (['ledger','bill','saved','slip','cash'].includes(id)&&a.dataset.go==='ledger'))); if(on) a.setAttribute('aria-current','page'); });
+    document.getElementById('keybar').innerHTML = keys[id] || '';
+    if (id==='dash') setTimeout(()=>document.getElementById('q').focus(), 0); else document.getElementById('win').focus();
+  }
+  document.querySelectorAll('[data-go]').forEach(el=>el.addEventListener('click', e=>{ e.preventDefault(); go(el.dataset.go); }));
+  document.querySelectorAll('#t-recv tr, #t-give tr').forEach(tr=>tr.addEventListener('click', ()=>go('ledger')));
+
+  const win = document.getElementById('win');
+  win.addEventListener('keydown', e=>{
+    const k = e.key, ctrl = e.ctrlKey || e.metaKey;
+    if (ctrl && k.toLowerCase()==='n') { e.preventDefault(); return go('bill'); }
+    if (ctrl && (k.toLowerCase()==='i' || k.toLowerCase()==='o')) { e.preventDefault(); return go('cash'); }
+    if (ctrl && k.toLowerCase()==='f') { e.preventDefault(); go('dash'); return; }
+    if (ctrl && k.toLowerCase()==='p') { e.preventDefault(); if (cur==='saved'||cur==='ledger') return go('slip'); }
+    if (ctrl && k==='Enter') { e.preventDefault(); if (cur==='bill') return go('saved'); if (cur==='cash'||cur==='launch') return go('dash'); }
+    if (k==='Escape') { e.preventDefault(); if (cur==='saved') return go('ledger'); if (cur==='dash') return; return go(cur==='slip'?'saved':'dash'); }
+    if (cur==='dash' && (k==='ArrowDown'||k==='ArrowUp')) { e.preventDefault(); const rows=[...document.querySelectorAll('#t-recv tr')]; let i=rows.findIndex(r=>r.classList.contains('sel')); rows[i]?.classList.remove('sel'); i=Math.max(0,Math.min(rows.length-1,i+(k==='ArrowDown'?1:-1))); rows[i].classList.add('sel'); return; }
+    if (cur==='dash' && k==='Enter' && e.target.id!=='q') { e.preventDefault(); return go('ledger'); }
+    if (cur==='dash' && k==='Enter' && e.target.id==='q') { e.preventDefault(); return go('ledger'); }
+    if (!ctrl && /^[1-8]$/.test(k) && e.target.id!=='q' && cur!=='bill') { const ids=['launch','dash','bill','saved','ledger','cash','slip','settings']; return go(ids[+k-1]); }
+  });
+  go('dash');
+})();
+</script>
