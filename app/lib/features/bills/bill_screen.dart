@@ -88,8 +88,14 @@ class _BillScreenState extends ConsumerState<BillScreen> {
   }
 
   Future<void> _escape(BillDraft d) async {
-    if (d.saved != null) {
-      context.go('/customers/${d.saved!.customerId}?select=${d.saved!.id}');
+    if (d.saved case final saved?) {
+      // A walk-in cash sale has no customer, so no ledger to open — the
+      // dashboard is the closest sensible place to land.
+      context.go(
+        saved.customerId == null
+            ? '/'
+            : '/customers/${saved.customerId}?select=${saved.id}',
+      );
       return;
     }
     if (!d.dirty) {
@@ -203,7 +209,7 @@ class _BillScreenState extends ConsumerState<BillScreen> {
                 if (d.saved case final saved?)
                   _SavedBanner(
                     saved: saved,
-                    customer: d.customer!,
+                    customer: d.customer,
                     balance: balance,
                   ),
                 if (d.saved == null) ...[
@@ -215,6 +221,7 @@ class _BillScreenState extends ConsumerState<BillScreen> {
                     onCustomer: _ctl.setCustomer,
                     onDate: _ctl.setDate,
                     onDescription: _ctl.setDescription,
+                    onWalkIn: _ctl.setWalkIn,
                   ),
                   const SizedBox(height: 14),
                   if (d.hasLines)
@@ -255,6 +262,7 @@ class _Header extends StatelessWidget {
     required this.onCustomer,
     required this.onDate,
     required this.onDescription,
+    required this.onWalkIn,
   });
   final BillDraft d;
   final List<Customer> customers;
@@ -263,6 +271,7 @@ class _Header extends StatelessWidget {
   final void Function(Customer?) onCustomer;
   final void Function(String) onDate;
   final void Function(String) onDescription;
+  final void Function(bool) onWalkIn;
 
   @override
   Widget build(BuildContext context) {
@@ -271,31 +280,40 @@ class _Header extends StatelessWidget {
       width: 90,
       child: Text(t, style: TextStyle(color: c.ink2)),
     );
+    final canWalkIn = d.type == TransactionType.sale;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
             label('Customer'),
-            SizedBox(
-              width: 320,
-              child: FocusTraversalOrder(
-                order: const NumericFocusOrder(1),
-                child: EntityAutocomplete<Customer>(
-                  fieldKey: const Key('bill.customer'),
-                  autofocus: true,
-                  options: customers,
-                  labelOf: (c) => c.name,
-                  selected: d.customer,
-                  hint: 'Type a name or phone',
-                  onSelected: onCustomer,
-                  onSubmittedWithoutOptions: () =>
-                      FocusScope.of(context).nextFocus(),
+            if (canWalkIn && d.isWalkIn)
+              Expanded(
+                child: Text(
+                  'Walk-in — a counter sale for cash, not tracked in any customer ledger.',
+                  style: TextStyle(fontSize: 13, color: c.ink2),
+                ),
+              )
+            else
+              SizedBox(
+                width: 320,
+                child: FocusTraversalOrder(
+                  order: const NumericFocusOrder(1),
+                  child: EntityAutocomplete<Customer>(
+                    fieldKey: const Key('bill.customer'),
+                    autofocus: true,
+                    options: customers,
+                    labelOf: (c) => c.name,
+                    selected: d.customer,
+                    hint: 'Type a name or phone',
+                    onSelected: onCustomer,
+                    onSubmittedWithoutOptions: () =>
+                        FocusScope.of(context).nextFocus(),
+                  ),
                 ),
               ),
-            ),
             const SizedBox(width: 14),
-            if (d.customer != null && balance != null)
+            if (!d.isWalkIn && d.customer != null && balance != null)
               Expanded(
                 child: Text(
                   _owesPhrase(balance!),
@@ -306,6 +324,15 @@ class _Header extends StatelessWidget {
                   ),
                 ),
               ),
+            if (canWalkIn) ...[
+              const SizedBox(width: 14),
+              Checkbox(
+                key: const Key('bill.walkIn'),
+                value: d.isWalkIn,
+                onChanged: (v) => onWalkIn(v ?? false),
+              ),
+              Text('Walk-in', style: TextStyle(fontSize: 13, color: c.ink2)),
+            ],
           ],
         ),
         const SizedBox(height: 8),
@@ -803,7 +830,12 @@ class _Totals extends StatelessWidget {
               color: c.paper,
               borderRadius: BorderRadius.circular(4),
             ),
-            child: d.customer == null
+            child: d.isWalkIn
+                ? Text(
+                    'Walk-in cash sale — not tracked in any customer ledger.',
+                    style: TextStyle(color: c.ink3),
+                  )
+                : d.customer == null
                 ? Text(
                     'Pick a customer to see the balance change.',
                     style: TextStyle(color: c.ink3),
@@ -934,7 +966,9 @@ class _SavedBanner extends StatelessWidget {
     required this.balance,
   });
   final Bill saved;
-  final Customer customer;
+
+  /// Null for a walk-in cash sale, which has no customer ledger to report.
+  final Customer? customer;
   final Money? balance;
 
   @override
@@ -966,7 +1000,9 @@ class _SavedBanner extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'Saved. Bill ${saved.displayNo} · ${formatMoney(saved.finalAmount)} · ${customer.name} now ${balance == null ? '' : _owesPhrase(balance!)}',
+              customer == null
+                  ? 'Saved. Bill ${saved.displayNo} · Cash sale of ${formatMoney(saved.finalAmount)}.'
+                  : 'Saved. Bill ${saved.displayNo} · ${formatMoney(saved.finalAmount)} · ${customer!.name} now ${balance == null ? '' : _owesPhrase(balance!)}',
               style: const TextStyle(fontSize: 13.5),
             ),
           ),

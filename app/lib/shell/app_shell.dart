@@ -23,7 +23,9 @@ List<KeyHint> hintsFor(String location) {
       KeyHint('Esc', 'back'),
     ];
   }
-  if (location == '/customers' || location == '/items') {
+  if (location == '/customers' ||
+      location == '/items' ||
+      location == '/cash-sales') {
     return const [
       KeyHint('↑↓', 'move'),
       KeyHint('Enter', 'open'),
@@ -193,7 +195,7 @@ class _Rail extends StatelessWidget {
       ('D', l10n.navDashboard, '/'),
       ('C', l10n.navCustomers, '/customers'),
       ('I', l10n.navItems, '/items'),
-      ('S', l10n.navCashSales, '/'),
+      ('S', l10n.navCashSales, '/cash-sales'),
       (',', l10n.navSettings, '/settings'),
     ];
     return Container(

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/bills/bill_screen.dart';
+import '../features/cash_sales/cash_sales_screen.dart';
 import '../features/customers/customer_form_screen.dart';
 import '../features/customers/customers_screen.dart';
 import '../features/items/items_screen.dart';
@@ -59,6 +60,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (_, _) => const CustomerFormScreen(),
           ),
           GoRoute(path: '/items', builder: (_, _) => const ItemsScreen()),
+          GoRoute(
+            path: '/cash-sales',
+            builder: (_, _) => const CashSalesScreen(),
+          ),
           GoRoute(
             path: '/items/new',
             builder: (_, _) => const ItemFormScreen(),

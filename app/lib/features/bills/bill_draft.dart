@@ -114,12 +114,17 @@ class BillDraft {
     this.error,
     this.dirty = false,
     this.editing,
+    this.isWalkIn = false,
   });
 
   final TransactionType type;
   final Customer? customer;
   final String entryDate; // ISO yyyy-MM-dd
   final String description;
+
+  /// A counter sale with no customer: never appears in any ledger. Only
+  /// meaningful when [type] is sale; the UI only shows the toggle then.
+  final bool isWalkIn;
   final List<LineDraft> lines;
   final String overrideText;
   final String amountText; // cash / opening / adjustment
@@ -167,6 +172,7 @@ class BillDraft {
     bool clearError = false,
     bool? dirty,
     Bill? editing,
+    bool? isWalkIn,
   }) => BillDraft(
     type: type,
     editing: editing ?? this.editing,
@@ -179,6 +185,7 @@ class BillDraft {
     saved: saved ?? this.saved,
     error: clearError ? null : (error ?? this.error),
     dirty: dirty ?? this.dirty,
+    isWalkIn: isWalkIn ?? this.isWalkIn,
   );
 }
 
@@ -255,6 +262,12 @@ class BillDraftController extends Notifier<BillDraft> {
     dirty: true,
     clearError: true,
   );
+  void setWalkIn(bool v) => state = state.copyWith(
+    isWalkIn: v,
+    clearCustomer: v,
+    dirty: true,
+    clearError: true,
+  );
   void setDate(String iso) =>
       state = state.copyWith(entryDate: iso, dirty: true);
   void setDescription(String v) =>
@@ -327,10 +340,9 @@ class BillDraftController extends Notifier<BillDraft> {
 
   Future<Bill?> save(OpenFirm firm) async {
     final d = state;
-    if (d.customer == null) {
-      state = d.copyWith(
-        error: 'Pick a customer first (walk-in cash sales come in a later release).',
-      );
+    final walkIn = d.type == TransactionType.sale && d.isWalkIn;
+    if (d.customer == null && !walkIn) {
+      state = d.copyWith(error: 'Pick a customer first, or check Walk-in.');
       return null;
     }
     if (d.hasLines && d.validLines.isEmpty) {
@@ -349,7 +361,7 @@ class BillDraftController extends Notifier<BillDraft> {
       id: editing?.id ?? newId(),
       version: editing?.version ?? 1,
       displayNo: editing?.displayNo,
-      customerId: d.customer!.id,
+      customerId: d.customer?.id,
       type: d.type,
       entryDate: d.entryDate,
       description: d.description.trim().isEmpty ? null : d.description.trim(),
@@ -363,16 +375,15 @@ class BillDraftController extends Notifier<BillDraft> {
         : await firm.bills.edit(bill);
     state = d.copyWith(saved: saved, dirty: false, clearError: true);
     ref.invalidate(dashboardRowsProvider);
-    ref.invalidate(customerBalanceProvider(d.customer!.id));
-    ref.invalidate(
-      ledgerEntriesProvider((
-        customerId: d.customer!.id,
-        includeDeleted: false,
-      )),
-    );
-    ref.invalidate(
-      ledgerEntriesProvider((customerId: d.customer!.id, includeDeleted: true)),
-    );
+    if (d.customer case final customer?) {
+      ref.invalidate(customerBalanceProvider(customer.id));
+      ref.invalidate(
+        ledgerEntriesProvider((customerId: customer.id, includeDeleted: false)),
+      );
+      ref.invalidate(
+        ledgerEntriesProvider((customerId: customer.id, includeDeleted: true)),
+      );
+    }
     if (editing != null) ref.invalidate(billHistoryProvider(editing.id));
     return saved;
   }
