@@ -1,0 +1,30 @@
+name: Windows installer
+on:
+  push: { tags: ['v*'] }
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, cache: true }
+      - run: flutter config --enable-windows-desktop
+      - run: flutter pub get
+      - name: Build release
+        working-directory: app
+        run: flutter build windows --release
+      - name: Bundle VC++ runtime
+        shell: pwsh
+        working-directory: app
+        run: |
+          $out = "build/windows/x64/runner/Release"
+          $vc = "C:\Windows\System32"
+          Copy-Item "$vc\msvcp140.dll","$vc\vcruntime140.dll","$vc\vcruntime140_1.dll" $out
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\ledgerly.iss
+      - uses: actions/upload-artifact@v4
+        with: { name: ledgerly-windows-installer, path: installer/Output/*.exe }

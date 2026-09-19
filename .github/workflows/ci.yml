@@ -1,0 +1,27 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+jobs:
+  analyze-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, cache: true }
+      - run: flutter --version
+      - name: Resolve workspace
+        run: flutter pub get
+      - name: Analyze
+        run: flutter analyze --fatal-infos
+      - name: Core tests (pure Dart)
+        working-directory: packages/ledgerly_core
+        run: dart test --reporter expanded
+      - name: App tests (drift on real SQLite, widget tests as Windows)
+        working-directory: app
+        run: flutter test --reporter expanded
+      - name: Migration schema exports are current
+        working-directory: app
+        run: |
+          dart run drift_dev schema dump lib/data/db/app_database.dart /tmp/schema_check
+          diff -r /tmp/schema_check drift_schemas || (echo "Schema changed without an export. Run: dart run drift_dev schema dump ..." && exit 1)
