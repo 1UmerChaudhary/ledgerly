@@ -30,6 +30,7 @@ void main() {
         findsOneWidget,
       );
     },
+    variant: windowsOnly,
   );
 
   testWidgets(
@@ -97,6 +98,7 @@ void main() {
       final ahmedY = tester.getTopLeft(find.text('Ahmed & Sons')).dy;
       expect(rashidY, lessThan(ahmedY));
     },
+    variant: windowsOnly,
   );
 
   testWidgets(
@@ -147,6 +149,7 @@ void main() {
       expect(find.byKey(const Key('ledger.screen')), findsOneWidget);
       expect(find.text('Rashid Traders'), findsWidgets);
     },
+    variant: windowsOnly,
   );
 
   testWidgets('arrow keys move the selection and Ctrl+N opens a new sale', (
