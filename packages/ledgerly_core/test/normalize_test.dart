@@ -57,6 +57,33 @@ void main() {
       expect(hits, isNot(contains('Karim Store')));
     });
 
+    test('two prefix matches rank by closeness of the whole word, deterministically', () {
+      for (var i = 0; i < 20; i++) {
+        final hits = fuzzySearch('rash', [
+          'Rasheed Bros',
+          'Rashid Traders',
+          'Rashida Mills',
+        ]);
+        expect(hits.map((h) => h.value).toList(), [
+          'Rashid Traders',
+          'Rasheed Bros',
+          'Rashida Mills',
+        ]);
+      }
+    });
+
+    test(
+      'a word that contains the query matches, ranked below a prefix match',
+      () {
+        final hits = fuzzySearch('cake', [
+          'Oil',
+          'Oilcake',
+          'Cake Mix',
+        ]).map((h) => h.value).toList();
+        expect(hits, ['Cake Mix', 'Oilcake']);
+      },
+    );
+
     test('matches on any word, not only the first', () {
       expect(fuzzySearch('depot', names).first.value, 'Bilal Oil Depot');
     });

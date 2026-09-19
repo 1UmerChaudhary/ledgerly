@@ -291,4 +291,27 @@ void main() {
       expect(reasons.map((r) => r.read<String>('reason')), ['edit', 'restore']);
     });
   });
+
+  group('balanceFor', () {
+    test(
+      'one customer\'s signed balance, zero when they have no bills',
+      () async {
+        expect(await bills.balanceFor(rashid), Money.zero);
+        await bills.saveNew(sale());
+        await bills.saveNew(
+          Bill(
+            id: newId(),
+            customerId: rashid,
+            type: TransactionType.cashIn,
+            entryDate: '2026-09-18',
+            typedAmount: Money.rupees(100000),
+          ),
+        );
+        expect(
+          await bills.balanceFor(rashid),
+          const Money(19716215 - 10000000),
+        );
+      },
+    );
+  });
 }

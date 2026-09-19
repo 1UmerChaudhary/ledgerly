@@ -48,9 +48,12 @@ class FuzzyHit<T> {
   final double score;
 }
 
-/// Ranks [candidates] against [query] by best word-level similarity and prefix
-/// match. Firms have hundreds or a few thousand customers, so this runs in
-/// memory; there is no need for a database extension.
+/// Ranks [candidates] against [query]. A word that starts with the query
+/// outranks one that merely contains it, which outranks a misspelling match;
+/// within a tier the word closest to the query as a whole wins, then the
+/// shorter label, then alphabetical, so the order is the same every time
+/// (Dart's sort is not stable on its own).
+/// Firms have hundreds or a few thousand customers, so this runs in memory.
 List<FuzzyHit<String>> fuzzySearch(
   String query,
   Iterable<String> candidates, {
@@ -58,23 +61,42 @@ List<FuzzyHit<String>> fuzzySearch(
 }) {
   final q = normalizeName(query);
   if (q.isEmpty) return candidates.map((c) => FuzzyHit(c, 1.0)).toList();
-  final hits = <FuzzyHit<String>>[];
+  // Rank tiers: 2 = a word starts with the query, 1 = a word contains it,
+  // 0 = merely similar (misspelling). Within a tier, whole-word closeness.
+  final ranked = <(String, int, double)>[];
   for (final c in candidates) {
-    final words = normalizeName(c).split(' ');
+    var tier = 0;
     var best = 0.0;
-    for (final w in words) {
-      final s = w.startsWith(q)
-          ? 1.0
-          : similarity(
-              q,
-              w.length > q.length + 2 ? w.substring(0, q.length + 2) : w,
-            );
-      if (s > best) best = s;
+    for (final w in normalizeName(c).split(' ')) {
+      final int t;
+      final double score;
+      if (w.startsWith(q)) {
+        t = 2;
+        score = similarity(q, w);
+      } else if (w.contains(q)) {
+        t = 1;
+        score = similarity(q, w);
+      } else {
+        t = 0;
+        score = similarity(
+          q,
+          w.length > q.length + 2 ? w.substring(0, q.length + 2) : w,
+        );
+      }
+      if (t > tier || (t == tier && score > best)) {
+        tier = t;
+        best = score;
+      }
     }
-    if (best >= threshold) hits.add(FuzzyHit(c, best));
+    if (tier > 0 || best >= threshold) ranked.add((c, tier, best));
   }
-  hits.sort((a, b) => b.score.compareTo(a.score));
-  return hits;
+  ranked.sort((a, b) {
+    if (a.$2 != b.$2) return b.$2.compareTo(a.$2);
+    if (a.$3 != b.$3) return b.$3.compareTo(a.$3);
+    if (a.$1.length != b.$1.length) return a.$1.length.compareTo(b.$1.length);
+    return a.$1.compareTo(b.$1);
+  });
+  return [for (final r in ranked) FuzzyHit(r.$1, r.$2 > 0 ? 1.0 : r.$3)];
 }
 
 /// 1.0 for identical strings, falling towards 0 with each edit (insert, delete,

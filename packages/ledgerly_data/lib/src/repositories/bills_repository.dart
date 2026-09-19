@@ -149,6 +149,19 @@ class BillsRepository {
     ];
   }
 
+  /// Signed balance of one customer, straight from the transactions.
+  Future<Money> balanceFor(String customerId) async {
+    final row = await db
+        .customSelect(
+          'SELECT COALESCE(SUM(signed_amount), 0) AS b FROM transactions '
+          'WHERE firm_id = ? AND customer_id = ? AND deleted_at IS NULL',
+          variables: [Variable(ctx.firmId), Variable(customerId)],
+          readsFrom: {db.transactions},
+        )
+        .getSingle();
+    return Money(row.read<int>('b'));
+  }
+
   Future<List<CustomerBalanceEntry>> balances() async {
     final rows =
         await (db.select(db.customerBalances)
