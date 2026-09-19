@@ -87,6 +87,7 @@ Money? parseMoney(String input) {
   final negative = m.group(1) == '-';
   final rupees = int.parse(m.group(2)!);
   final frac = (m.group(3) ?? '').padRight(3, '0').substring(0, 3);
-  final paisa = rupees * 100 + (int.parse(frac) + 5) ~/ 10; // half-up on 3rd digit
+  final paisa =
+      rupees * 100 + (int.parse(frac) + 5) ~/ 10; // half-up on 3rd digit
   return Money(negative ? -paisa : paisa);
 }

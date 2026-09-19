@@ -38,7 +38,13 @@ abstract final class RateBase {
   static const Weight fiftySix = Weight(56000);
 
   /// Hotkeys 1–5 in the bill form pick these in this order.
-  static const List<Weight> presets = [thirty, thirtyFour, maund, forty, fiftySix];
+  static const List<Weight> presets = [
+    thirty,
+    thirtyFour,
+    maund,
+    forty,
+    fiftySix,
+  ];
 }
 
 /// Always three decimals unless [trim] is set, so grid columns line up.
@@ -57,7 +63,9 @@ final RegExp _kgPattern = RegExp(r'^(\d+)(?:\.(\d{1,3}))?$');
 /// Accepts "37.324", "40", "16.5 kg", "2,000". Grams are the finest unit, so a
 /// fourth decimal is rejected rather than silently rounded.
 Weight? parseKg(String input) {
-  final cleaned = input.replaceAll(RegExp(r'\s*kg\s*$', caseSensitive: false), '').replaceAll(RegExp(r'[,\s]'), '');
+  final cleaned = input
+      .replaceAll(RegExp(r'\s*kg\s*$', caseSensitive: false), '')
+      .replaceAll(RegExp(r'[,\s]'), '');
   final m = _kgPattern.firstMatch(cleaned);
   if (m == null) return null;
   final frac = (m.group(2) ?? '').padRight(3, '0');

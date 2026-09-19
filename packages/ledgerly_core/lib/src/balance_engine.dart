@@ -1,6 +1,13 @@
 import 'money.dart';
 
-enum TransactionType { sale, purchase, cashIn, cashOut, openingBalance, adjustment }
+enum TransactionType {
+  sale,
+  purchase,
+  cashIn,
+  cashOut,
+  openingBalance,
+  adjustment,
+}
 
 /// The single place the sign of a transaction is decided. Mirrors the
 /// `signed_amount` generated column's CASE in the database; a test checks the
@@ -10,7 +17,11 @@ Money signedAmount(TransactionType type, Money finalAmount) {
   switch (type) {
     case TransactionType.adjustment:
       if (finalAmount.isZero) {
-        throw ArgumentError.value(finalAmount, 'finalAmount', 'adjustment must be non-zero');
+        throw ArgumentError.value(
+          finalAmount,
+          'finalAmount',
+          'adjustment must be non-zero',
+        );
       }
       return finalAmount;
     case TransactionType.sale:
@@ -31,8 +42,11 @@ void _requirePositive(Money amount) {
   }
 }
 
-Money applyTransaction(Money balance, TransactionType type, Money finalAmount) =>
-    balance + signedAmount(type, finalAmount);
+Money applyTransaction(
+  Money balance,
+  TransactionType type,
+  Money finalAmount,
+) => balance + signedAmount(type, finalAmount);
 
 Money receivable(Money balance) => balance.isPositive ? balance : Money.zero;
 

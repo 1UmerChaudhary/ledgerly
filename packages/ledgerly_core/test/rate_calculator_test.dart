@@ -38,7 +38,11 @@ void main() {
           final w = Weight(rate * 37 % 500000 + 1);
           final sql = (rate * w.grams + base.grams ~/ 2) ~/ base.grams;
           expect(
-            lineTotalByWeight(rate: Money(rate), totalWeight: w, rateBase: base).paisa,
+            lineTotalByWeight(
+              rate: Money(rate),
+              totalWeight: w,
+              rateBase: base,
+            ).paisa,
             sql,
           );
         }
@@ -47,17 +51,27 @@ void main() {
 
     test('rejects a zero or negative base', () {
       expect(
-        () => lineTotalByWeight(rate: Money.rupees(1), totalWeight: Weight.kg(1), rateBase: const Weight(0)),
+        () => lineTotalByWeight(
+          rate: Money.rupees(1),
+          totalWeight: Weight.kg(1),
+          rateBase: const Weight(0),
+        ),
         throwsArgumentError,
       );
     });
   });
 
   test('totalWeightForBags multiplies count by bag weight', () {
-    expect(totalWeightForBags(bagCount: 20, bagWeight: Weight.kg(16)), Weight.kg(320));
+    expect(
+      totalWeightForBags(bagCount: 20, bagWeight: Weight.kg(16)),
+      Weight.kg(320),
+    );
   });
 
   test('lineTotalByCount is rate times quantity', () {
-    expect(lineTotalByCount(rate: Money.rupees(4200), quantity: 12), Money.rupees(50400));
+    expect(
+      lineTotalByCount(rate: Money.rupees(4200), quantity: 12),
+      Money.rupees(50400),
+    );
   });
 }

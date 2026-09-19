@@ -16,7 +16,13 @@ void main() {
     test('has the standard rate bases as named constants', () {
       expect(RateBase.maund.grams, 37324);
       expect(RateBase.forty.grams, 40000);
-      expect(RateBase.presets.map((w) => w.grams), [30000, 34000, 37324, 40000, 56000]);
+      expect(RateBase.presets.map((w) => w.grams), [
+        30000,
+        34000,
+        37324,
+        40000,
+        56000,
+      ]);
     });
   });
 
@@ -34,12 +40,15 @@ void main() {
   });
 
   group('parseKg', () {
-    test('accepts kilograms with up to three decimals and an optional unit', () {
-      expect(parseKg('37.324'), const Weight(37324));
-      expect(parseKg('40'), Weight.kg(40));
-      expect(parseKg('16.5 kg'), const Weight(16500));
-      expect(parseKg('2,000'), const Weight(2000000));
-    });
+    test(
+      'accepts kilograms with up to three decimals and an optional unit',
+      () {
+        expect(parseKg('37.324'), const Weight(37324));
+        expect(parseKg('40'), Weight.kg(40));
+        expect(parseKg('16.5 kg'), const Weight(16500));
+        expect(parseKg('2,000'), const Weight(2000000));
+      },
+    );
 
     test('rejects a fourth decimal, negatives and garbage', () {
       expect(parseKg('1.2345'), isNull);

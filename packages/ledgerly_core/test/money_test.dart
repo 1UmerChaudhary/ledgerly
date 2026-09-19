@@ -37,7 +37,10 @@ void main() {
     });
 
     test('shows two paisa digits when asked', () {
-      expect(formatMoney(const Money(60283572), showPaisa: true), 'Rs 6,02,835.72');
+      expect(
+        formatMoney(const Money(60283572), showPaisa: true),
+        'Rs 6,02,835.72',
+      );
       expect(formatMoney(const Money(500), showPaisa: true), 'Rs 5.00');
     });
 

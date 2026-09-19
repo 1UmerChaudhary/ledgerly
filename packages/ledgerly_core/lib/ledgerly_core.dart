@@ -2,6 +2,8 @@
 library;
 
 export 'src/balance_engine.dart';
+export 'src/hlc.dart';
 export 'src/money.dart';
+export 'src/normalize.dart';
 export 'src/rate_calculator.dart';
 export 'src/weight.dart';

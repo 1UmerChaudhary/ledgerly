@@ -10,7 +10,8 @@ void main() {
     for (final f in Directory('lib').listSync(recursive: true)) {
       if (f is! File || !f.path.endsWith('.dart')) continue;
       for (final line in f.readAsLinesSync()) {
-        if (RegExp(r"^import 'package:(flutter|drift|sqlite3)").hasMatch(line)) {
+        if (RegExp(r"^import 'package:(flutter|drift|sqlite3)")
+            .hasMatch(line)) {
           offenders.add('${f.path}: $line');
         }
       }
