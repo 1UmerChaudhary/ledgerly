@@ -13,6 +13,23 @@ class LedgerEntry {
   final Money runningBalance;
 }
 
+class HistoryEntry {
+  const HistoryEntry({
+    required this.version,
+    required this.reason,
+    required this.changedAt,
+    required this.changedByDeviceId,
+    required this.bill,
+  });
+  final int version;
+  final String reason;
+  final int changedAt;
+  final String changedByDeviceId;
+
+  /// The bill as it was BEFORE the change this entry records.
+  final Bill bill;
+}
+
 class CustomerBalanceEntry {
   const CustomerBalanceEntry(this.customerId, this.balance);
   final String customerId;
@@ -145,6 +162,29 @@ class BillsRepository {
             byBill[r.read<String>('id')] ?? const [],
           ),
           Money(r.read<int>('running')),
+        ),
+    ];
+  }
+
+  /// Prior versions of a bill, newest first. Each snapshot is the bill as it
+  /// was before that change; the live row is the current version.
+  Future<List<HistoryEntry>> historyFor(String billId) async {
+    final rows =
+        await (db.select(db.transactionHistory)
+              ..where((h) => h.transactionId.equals(billId))
+              ..orderBy([
+                (h) => OrderingTerm.desc(h.changedAt),
+                (h) => OrderingTerm.desc(h.version),
+              ]))
+            .get();
+    return [
+      for (final r in rows)
+        HistoryEntry(
+          version: r.version,
+          reason: r.reason,
+          changedAt: r.changedAt,
+          changedByDeviceId: r.changedByDeviceId,
+          bill: BillCodec.fromSnapshot(r.snapshot),
         ),
     ];
   }

@@ -2,6 +2,7 @@
 library;
 
 export 'src/balance_engine.dart';
+export 'src/bill_diff.dart';
 export 'src/display_no.dart';
 export 'src/entities.dart';
 export 'src/hlc.dart';

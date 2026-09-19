@@ -314,4 +314,23 @@ void main() {
       },
     );
   });
+
+  group('historyFor', () {
+    test(
+      'lists prior versions newest first with their snapshots and reasons',
+      () async {
+        final v1 = await bills.saveNew(sale());
+        clock += 5;
+        final v2 = await bills.edit(v1.copyWith(description: 'second'));
+        clock += 5;
+        await bills.edit(v2.copyWith(description: 'third'));
+        final history = await bills.historyFor(v1.id);
+        expect(history.map((h) => h.version), [2, 1]);
+        expect(history.map((h) => h.reason), ['edit', 'edit']);
+        expect(history.first.bill.description, 'second');
+        expect(history.last.bill.description, 'Sept supply');
+        expect(history.first.changedAt, greaterThan(history.last.changedAt));
+      },
+    );
+  });
 }
