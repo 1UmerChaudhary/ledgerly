@@ -8,6 +8,7 @@ import '../features/customers/customers_screen.dart';
 import '../features/items/items_screen.dart';
 import '../features/dashboard/dashboard_screen.dart';
 import '../features/ledger/ledger_screen.dart';
+import '../features/settings/settings_screen.dart';
 import '../features/setup/first_launch_screen.dart';
 import '../shell/app_shell.dart';
 import 'providers.dart';
@@ -47,6 +48,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state, child) =>
             AppShell(hints: hintsFor(state.matchedLocation), child: child),
         routes: [
+          GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
           GoRoute(path: '/', builder: (_, _) => const DashboardScreen()),
           GoRoute(
             path: '/customers',

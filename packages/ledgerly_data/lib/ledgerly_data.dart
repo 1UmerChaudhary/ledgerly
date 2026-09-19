@@ -11,4 +11,5 @@ export 'src/outbox.dart';
 export 'src/repositories/bills_repository.dart';
 export 'src/repositories/customers_repository.dart';
 export 'src/repositories/firm_setup.dart';
+export 'src/repositories/firms_repository.dart';
 export 'src/repositories/items_repository.dart';

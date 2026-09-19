@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../bootstrap/providers.dart';
+import '../features/settings/settings_providers.dart';
 import '../l10n/app_localizations.dart';
 import '../theme/ledgerly_theme.dart';
 
@@ -14,6 +15,14 @@ class KeyHint {
 }
 
 List<KeyHint> hintsFor(String location) {
+  if (location == '/settings') {
+    return const [
+      KeyHint('Tab', 'next field'),
+      KeyHint('Ctrl+Enter', 'save'),
+      KeyHint('Ctrl+B', 'backup now'),
+      KeyHint('Esc', 'back'),
+    ];
+  }
   if (location == '/customers' || location == '/items') {
     return const [
       KeyHint('↑↓', 'move'),
@@ -70,6 +79,8 @@ class AppShell extends ConsumerWidget {
     final c = context.colors;
     final l10n = L10n.of(context);
     final firm = ref.watch(openFirmProvider).value;
+    final settings = ref.watch(firmSettingsProvider).value;
+    final backup = ref.watch(backupRunnerProvider);
     final location = GoRouterState.of(context).matchedLocation;
     return CallbackShortcuts(
       bindings: {
@@ -87,6 +98,10 @@ class AppShell extends ConsumerWidget {
             context.go('/bills/new?type=cash_out'),
         const SingleActivator(LogicalKeyboardKey.keyF, control: true): () =>
             context.go('/'),
+        const SingleActivator(LogicalKeyboardKey.comma, control: true): () =>
+            context.go('/settings'),
+        const SingleActivator(LogicalKeyboardKey.keyB, control: true): () =>
+            ref.read(backupRunnerProvider.notifier).runNow(),
         const SingleActivator(LogicalKeyboardKey.escape): () {
           if (location != '/') context.go('/');
         },
@@ -98,8 +113,9 @@ class AppShell extends ConsumerWidget {
           body: Column(
             children: [
               _TitleBar(
-                firmName: firm?.firmName ?? l10n.appName,
+                firmName: settings?.name ?? firm?.firmName ?? l10n.appName,
                 deviceCode: firm?.ctx.deviceShortCode,
+                backup: backup,
               ),
               Expanded(
                 child: Row(
@@ -119,7 +135,12 @@ class AppShell extends ConsumerWidget {
 }
 
 class _TitleBar extends StatelessWidget {
-  const _TitleBar({required this.firmName, this.deviceCode});
+  const _TitleBar({
+    required this.firmName,
+    this.deviceCode,
+    required this.backup,
+  });
+  final BackupStatus backup;
   final String firmName;
   final String? deviceCode;
 
@@ -140,6 +161,13 @@ class _TitleBar extends StatelessWidget {
             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
           ),
           const Spacer(),
+          if (backup.lastAt case final t?) ...[
+            Text(
+              'Backed up ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')} ✓',
+              style: TextStyle(fontSize: 12.5, color: c.receivable),
+            ),
+            const SizedBox(width: 18),
+          ],
           if (deviceCode != null) ...[
             Text('Device ', style: TextStyle(color: c.ink2, fontSize: 13)),
             Text(
@@ -166,7 +194,7 @@ class _Rail extends StatelessWidget {
       ('C', l10n.navCustomers, '/customers'),
       ('I', l10n.navItems, '/items'),
       ('S', l10n.navCashSales, '/'),
-      (',', l10n.navSettings, '/'),
+      (',', l10n.navSettings, '/settings'),
     ];
     return Container(
       width: 96,

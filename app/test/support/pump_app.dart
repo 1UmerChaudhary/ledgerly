@@ -1,11 +1,17 @@
 import 'package:drift/native.dart';
+
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ledgerly/app.dart';
+
+import 'package:ledgerly/bootstrap/app_paths.dart';
 import 'package:ledgerly/bootstrap/global_prefs.dart';
 import 'package:ledgerly/bootstrap/providers.dart';
 import 'package:ledgerly_core/ledgerly_core.dart';
+import 'package:ledgerly/features/settings/settings_providers.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 
 /// Boots the real app against an in-memory database. Use together with
@@ -35,9 +41,18 @@ Future<ProviderContainer> pumpLedgerly(
     await seed(db, ctx);
     await prefs.setLastFirmId(ctx.firmId);
   }
+  // Real filesystem writes from the flutter_tester binary hang in this
+  // sandboxed CI environment (proven by direct probing), so tests never touch
+  // disk: AppPaths points somewhere inert, and the backup runner is faked.
+  // BackupService's real file behaviour is already tested end-to-end in
+  // packages/ledgerly_data/test/backup_service_test.dart via plain `dart test`.
   final container = ProviderContainer(
     overrides: [
       globalPrefsProvider.overrideWithValue(prefs),
+      appPathsProvider.overrideWithValue(
+        AppPaths(Directory('ledgerly-test-paths-unused')),
+      ),
+      backupRunnerProvider.overrideWith(FakeBackupRunner.new),
       databaseOpenerProvider.overrideWithValue((firmId) async => db),
     ],
   );
@@ -62,4 +77,20 @@ Future<void> pressCtrl(WidgetTester tester, LogicalKeyboardKey key) async {
     platform: 'windows',
   );
   await tester.pumpAndSettle();
+}
+
+/// Stands in for [BackupRunner] in widget tests: no ref.listen auto-trigger
+/// on firm-open, no real disk access. BackupService's real behaviour is
+/// covered in the data package; this only fakes the state a UI test needs.
+class FakeBackupRunner extends BackupRunner {
+  @override
+  BackupStatus build() => const BackupStatus();
+
+  @override
+  Future<void> runNow() async {
+    state = BackupStatus(lastAt: DateTime.now());
+  }
+
+  @override
+  Future<void> runIfDue() async {}
 }

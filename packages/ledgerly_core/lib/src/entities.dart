@@ -179,3 +179,24 @@ class Item {
   final Weight? defaultRateBase;
   final Uom defaultUom;
 }
+
+@immutable
+class Firm {
+  const Firm({
+    required this.id,
+    required this.name,
+    required this.contactNumber,
+    this.address,
+    this.showPaisa = false,
+    this.grouping = NumberGrouping.pakistani,
+    this.defaultCountryCode = '92',
+  });
+
+  final String id;
+  final String name;
+  final String contactNumber;
+  final String? address;
+  final bool showPaisa;
+  final NumberGrouping grouping;
+  final String defaultCountryCode;
+}

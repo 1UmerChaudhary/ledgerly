@@ -6,6 +6,7 @@ import 'package:ledgerly_core/ledgerly_core.dart';
 
 import '../../bootstrap/providers.dart';
 import '../../l10n/app_localizations.dart';
+import '../settings/settings_providers.dart';
 import '../../theme/ledgerly_theme.dart';
 
 class DashboardRow {
@@ -196,7 +197,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 }
 
-class _BalancePanel extends StatelessWidget {
+class _BalancePanel extends ConsumerWidget {
   const _BalancePanel({
     super.key,
     required this.title,
@@ -213,7 +214,8 @@ class _BalancePanel extends StatelessWidget {
   final void Function(int index) onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final fmt = ref.watch(moneyFormatProvider);
     final c = context.colors;
     final total = rows.fold(Money.zero, (sum, r) => sum + r.balance.abs());
     return Container(
@@ -245,7 +247,7 @@ class _BalancePanel extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  formatMoney(total),
+                  fmt(total),
                   style: numberStyle.copyWith(
                     fontSize: 20,
                     fontWeight: FontWeight.w500,
@@ -286,7 +288,7 @@ class _BalancePanel extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          formatMoney(rows[i].balance.abs(), symbol: false),
+                          fmt(rows[i].balance.abs(), symbol: false),
                           style: numberStyle.copyWith(
                             fontSize: 13.5,
                             color: color,
