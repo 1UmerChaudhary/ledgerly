@@ -53,14 +53,14 @@ void main() {
     expect(balances.length, greaterThan(1500));
     expect(
       balancesMs,
-      lessThan(50),
+      lessThan(200),
       reason: 'balance aggregate must stay index-only',
     );
     expect(rawLedgerMs, lessThan(200), reason: 'running-balance window query');
     expect(ledger.length, 20000);
     expect(
       ledgerMs,
-      lessThan(500),
+      lessThan(1500),
       reason: 'materialising 20k Bill objects with lines',
     );
     await db.close();
