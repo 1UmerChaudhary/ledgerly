@@ -7,15 +7,15 @@ void main() {
       'sale, cash paid out and opening balance add to what the customer owes',
       () {
         expect(
-          signedAmount(TransactionType.sale, Money.rupees(100)),
+          signedAmountFor(TransactionType.sale, Money.rupees(100)),
           Money.rupees(100),
         );
         expect(
-          signedAmount(TransactionType.cashOut, Money.rupees(100)),
+          signedAmountFor(TransactionType.cashOut, Money.rupees(100)),
           Money.rupees(100),
         );
         expect(
-          signedAmount(TransactionType.openingBalance, Money.rupees(100)),
+          signedAmountFor(TransactionType.openingBalance, Money.rupees(100)),
           Money.rupees(100),
         );
       },
@@ -23,37 +23,37 @@ void main() {
 
     test('purchase and cash received subtract', () {
       expect(
-        signedAmount(TransactionType.purchase, Money.rupees(100)),
+        signedAmountFor(TransactionType.purchase, Money.rupees(100)),
         Money.rupees(-100),
       );
       expect(
-        signedAmount(TransactionType.cashIn, Money.rupees(100)),
+        signedAmountFor(TransactionType.cashIn, Money.rupees(100)),
         Money.rupees(-100),
       );
     });
 
     test('adjustment passes its own sign through', () {
       expect(
-        signedAmount(TransactionType.adjustment, Money.rupees(-30)),
+        signedAmountFor(TransactionType.adjustment, Money.rupees(-30)),
         Money.rupees(-30),
       );
       expect(
-        signedAmount(TransactionType.adjustment, Money.rupees(30)),
+        signedAmountFor(TransactionType.adjustment, Money.rupees(30)),
         Money.rupees(30),
       );
     });
 
     test('rejects amounts the database CHECK would reject', () {
       expect(
-        () => signedAmount(TransactionType.sale, Money.zero),
+        () => signedAmountFor(TransactionType.sale, Money.zero),
         throwsArgumentError,
       );
       expect(
-        () => signedAmount(TransactionType.sale, Money.rupees(-1)),
+        () => signedAmountFor(TransactionType.sale, Money.rupees(-1)),
         throwsArgumentError,
       );
       expect(
-        () => signedAmount(TransactionType.adjustment, Money.zero),
+        () => signedAmountFor(TransactionType.adjustment, Money.zero),
         throwsArgumentError,
       );
     });
@@ -115,7 +115,7 @@ void main() {
       (TransactionType.sale, Money.rupees(290000)),
     ];
     expect(
-      runningBalances(entries.map((e) => signedAmount(e.$1, e.$2))).toList(),
+      runningBalances(entries.map((e) => signedAmountFor(e.$1, e.$2))).toList(),
       [
         Money.rupees(220000),
         Money.rupees(430000),

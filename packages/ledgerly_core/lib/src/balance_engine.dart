@@ -13,7 +13,7 @@ enum TransactionType {
 /// `signed_amount` generated column's CASE in the database; a test checks the
 /// two agree. Positive balance = customer owes the firm (receivable),
 /// negative = firm owes the customer (giveable).
-Money signedAmount(TransactionType type, Money finalAmount) {
+Money signedAmountFor(TransactionType type, Money finalAmount) {
   switch (type) {
     case TransactionType.adjustment:
       if (finalAmount.isZero) {
@@ -46,7 +46,7 @@ Money applyTransaction(
   Money balance,
   TransactionType type,
   Money finalAmount,
-) => balance + signedAmount(type, finalAmount);
+) => balance + signedAmountFor(type, finalAmount);
 
 Money receivable(Money balance) => balance.isPositive ? balance : Money.zero;
 

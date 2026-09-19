@@ -3,6 +3,7 @@ library;
 
 export 'src/balance_engine.dart';
 export 'src/display_no.dart';
+export 'src/entities.dart';
 export 'src/hlc.dart';
 export 'src/money.dart';
 export 'src/normalize.dart';
