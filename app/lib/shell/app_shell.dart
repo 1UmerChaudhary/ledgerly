@@ -33,7 +33,9 @@ List<KeyHint> hintsFor(String location) {
       KeyHint('Esc', 'dashboard'),
     ];
   }
-  if (location == '/customers/new' || location == '/items/new') {
+  if (location == '/customers/new' ||
+      location == '/items/new' ||
+      location == '/customers/opening-balances') {
     return const [
       KeyHint('Tab', 'next field'),
       KeyHint('Ctrl+Enter', 'save'),

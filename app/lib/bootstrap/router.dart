@@ -6,6 +6,7 @@ import '../features/bills/bill_screen.dart';
 import '../features/cash_sales/cash_sales_screen.dart';
 import '../features/customers/customer_form_screen.dart';
 import '../features/customers/customers_screen.dart';
+import '../features/customers/opening_balances_screen.dart';
 import '../features/items/items_screen.dart';
 import '../features/dashboard/dashboard_screen.dart';
 import '../features/ledger/ledger_screen.dart';
@@ -58,6 +59,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/customers/new',
             builder: (_, _) => const CustomerFormScreen(),
+          ),
+          GoRoute(
+            path: '/customers/opening-balances',
+            builder: (_, _) => const OpeningBalancesScreen(),
           ),
           GoRoute(path: '/items', builder: (_, _) => const ItemsScreen()),
           GoRoute(

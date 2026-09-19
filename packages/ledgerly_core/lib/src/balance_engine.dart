@@ -42,6 +42,18 @@ void _requirePositive(Money amount) {
   }
 }
 
+/// Which transaction type can hold a starting balance of this sign, for
+/// onboarding a firm's existing customers. `opening_balance` can only be
+/// positive (the database enforces this: a firm can't "owe money from day
+/// one" via that type) — a starting giveable needs `adjustment` instead,
+/// which allows any non-zero sign. Zero needs no transaction at all.
+TransactionType? openingEntryTypeFor(Money balance) {
+  if (balance.isZero) return null;
+  return balance.isPositive
+      ? TransactionType.openingBalance
+      : TransactionType.adjustment;
+}
+
 Money applyTransaction(
   Money balance,
   TransactionType type,

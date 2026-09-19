@@ -8,5 +8,6 @@ export 'src/entities.dart';
 export 'src/hlc.dart';
 export 'src/money.dart';
 export 'src/normalize.dart';
+export 'src/opening_balance_csv.dart';
 export 'src/rate_calculator.dart';
 export 'src/weight.dart';

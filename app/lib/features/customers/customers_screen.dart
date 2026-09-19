@@ -94,6 +94,11 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                     ),
                   ),
                   const Spacer(),
+                  TextButton(
+                    onPressed: () => context.go('/customers/opening-balances'),
+                    child: const Text('Import opening balances'),
+                  ),
+                  const SizedBox(width: 10),
                   Text(
                     '${all.length} total · Ctrl+N adds one',
                     style: TextStyle(fontSize: 12.5, color: c.ink3),
