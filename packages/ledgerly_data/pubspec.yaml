@@ -1,0 +1,22 @@
+name: ledgerly_data
+description: Ledgerly's local database layer — drift schema, migrations, repositories, backups. Pure Dart so it runs under `dart test` and can be reused outside the Flutter app.
+publish_to: none
+resolution: workspace
+environment:
+  sdk: ^3.13.0
+dependencies:
+  drift: ^2.35.0
+  sqlite3: ^3.6.0
+  ledgerly_core:
+    path: ../ledgerly_core
+  meta: ^1.15.0
+  path: ^1.9.0
+dev_dependencies:
+  test: ^1.25.0
+  lints: ^6.0.0
+  drift_dev: ^2.35.0
+  build_runner: ^2.4.0
+hooks:
+  user_defines:
+    sqlite3:
+      source: sqlcipher

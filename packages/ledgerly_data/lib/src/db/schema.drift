@@ -1,0 +1,237 @@
+CREATE TABLE firms (
+  id TEXT NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36),
+  name TEXT NOT NULL,
+  contact_number TEXT NOT NULL,
+  address TEXT,
+  logo_blob BLOB,
+  number_grouping TEXT NOT NULL DEFAULT 'pk' CHECK (number_grouping IN ('pk', 'western')),
+  show_paisa BOOLEAN NOT NULL DEFAULT FALSE,
+  default_country_code TEXT NOT NULL DEFAULT '92',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  updated_by_device_id TEXT NOT NULL,
+  deleted_at INTEGER
+) AS FirmRow;
+
+-- Global identity table: a person may belong to several firms (firm_members).
+CREATE TABLE users (
+  id TEXT NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36),
+  name TEXT NOT NULL,
+  email TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  updated_by_device_id TEXT NOT NULL,
+  deleted_at INTEGER
+) AS UserRow;
+
+CREATE TABLE firm_members (
+  id TEXT NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36),
+  firm_id TEXT NOT NULL REFERENCES firms (id),
+  user_id TEXT NOT NULL REFERENCES users (id),
+  role TEXT NOT NULL CHECK (role IN ('owner', 'manager', 'clerk')),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  updated_by_device_id TEXT NOT NULL,
+  deleted_at INTEGER
+) AS FirmMemberRow;
+CREATE UNIQUE INDEX idx_members_live ON firm_members (firm_id, user_id) WHERE deleted_at IS NULL;
+
+CREATE TABLE devices (
+  id TEXT NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36),
+  firm_id TEXT NOT NULL REFERENCES firms (id),
+  name TEXT NOT NULL,
+  platform TEXT NOT NULL,
+  short_code TEXT NOT NULL CHECK (length(short_code) = 4),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  updated_by_device_id TEXT NOT NULL,
+  deleted_at INTEGER
+) AS DeviceRow;
+CREATE UNIQUE INDEX idx_devices_code ON devices (firm_id, short_code);
+
+CREATE TABLE items (
+  id TEXT NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36),
+  firm_id TEXT NOT NULL REFERENCES firms (id),
+  name TEXT NOT NULL,
+  name_normalized TEXT NOT NULL,
+  default_bag_weight_g INTEGER CHECK (default_bag_weight_g IS NULL OR default_bag_weight_g > 0),
+  default_rate_base_weight_g INTEGER CHECK (default_rate_base_weight_g IS NULL OR default_rate_base_weight_g > 0),
+  default_uom TEXT NOT NULL DEFAULT 'kg' CHECK (default_uom IN ('kg', 'unit')),
+  track_stock BOOLEAN NOT NULL DEFAULT FALSE,
+  created_by_user_id TEXT NOT NULL REFERENCES users (id),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  updated_by_device_id TEXT NOT NULL,
+  deleted_at INTEGER,
+  UNIQUE (firm_id, id)
+) AS ItemRow;
+CREATE INDEX idx_items_name ON items (firm_id, name_normalized);
+
+CREATE TABLE customers (
+  id TEXT NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36),
+  firm_id TEXT NOT NULL REFERENCES firms (id),
+  name TEXT NOT NULL,
+  name_normalized TEXT NOT NULL,
+  phone TEXT,
+  phone_normalized TEXT,
+  notes TEXT,
+  created_by_user_id TEXT NOT NULL REFERENCES users (id),
+  merged_into_id TEXT REFERENCES customers (id),
+  needs_review BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  updated_by_device_id TEXT NOT NULL,
+  deleted_at INTEGER,
+  UNIQUE (firm_id, id)
+) AS CustomerRow;
+CREATE INDEX idx_customers_name ON customers (firm_id, name_normalized);
+-- Phone is the duplicate key. Partial so deleted and merged-away rows free the number.
+CREATE UNIQUE INDEX idx_customers_phone ON customers (firm_id, phone_normalized)
+  WHERE deleted_at IS NULL AND merged_into_id IS NULL AND phone_normalized IS NOT NULL;
+
+CREATE TABLE transactions (
+  id TEXT NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36),
+  firm_id TEXT NOT NULL REFERENCES firms (id),
+  customer_id TEXT,                       -- NULL = walk-in cash sale, no ledger
+  device_short_code TEXT NOT NULL,
+  display_seq INTEGER NOT NULL CHECK (display_seq > 0),
+  type TEXT NOT NULL CHECK (type IN ('sale', 'purchase', 'cash_in', 'cash_out', 'opening_balance', 'adjustment')),
+  entry_date TEXT NOT NULL CHECK (entry_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  description TEXT,
+  version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
+  calculated_total INTEGER NOT NULL,
+  overridden_total INTEGER,
+  overridden_total_basis INTEGER,
+  final_amount INTEGER NOT NULL,
+  -- The ONE place the sign of a transaction lives. No ELSE: an unknown type is
+  -- already rejected by the CHECK above, and a new type must be added here on purpose.
+  signed_amount INTEGER GENERATED ALWAYS AS (
+    CASE type
+      WHEN 'sale' THEN final_amount
+      WHEN 'cash_out' THEN final_amount
+      WHEN 'opening_balance' THEN final_amount
+      WHEN 'adjustment' THEN final_amount
+      WHEN 'purchase' THEN -final_amount
+      WHEN 'cash_in' THEN -final_amount
+    END
+  ) STORED,
+  created_by_user_id TEXT NOT NULL REFERENCES users (id),
+  updated_by_user_id TEXT NOT NULL REFERENCES users (id),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  updated_by_device_id TEXT NOT NULL,
+  deleted_at INTEGER,
+  UNIQUE (firm_id, id),
+  FOREIGN KEY (firm_id, customer_id) REFERENCES customers (firm_id, id),
+  CHECK ((type = 'adjustment' AND final_amount <> 0) OR (type <> 'adjustment' AND final_amount > 0))
+) AS TransactionRow;
+-- Covering, partial: the balance aggregate never touches the table.
+CREATE INDEX idx_txn_balance ON transactions (firm_id, customer_id, signed_amount) WHERE deleted_at IS NULL;
+-- Ledger order, no sort step.
+CREATE INDEX idx_txn_ledger ON transactions (firm_id, customer_id, entry_date, created_at, id) WHERE deleted_at IS NULL;
+CREATE INDEX idx_txn_walkin ON transactions (firm_id, entry_date) WHERE customer_id IS NULL;
+CREATE UNIQUE INDEX idx_txn_display ON transactions (firm_id, device_short_code, display_seq);
+CREATE INDEX idx_txn_updated ON transactions (firm_id, updated_at);
+
+CREATE TABLE transaction_lines (
+  id TEXT NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36),
+  firm_id TEXT NOT NULL,
+  transaction_id TEXT NOT NULL,
+  line_no INTEGER NOT NULL CHECK (line_no >= 0),
+  item_id TEXT NOT NULL,
+  uom TEXT NOT NULL DEFAULT 'kg' CHECK (uom IN ('kg', 'unit')),
+  sale_mode TEXT NOT NULL CHECK (sale_mode IN ('by_bags', 'by_weight', 'by_count')),
+  bag_count INTEGER CHECK (bag_count IS NULL OR bag_count > 0),
+  bag_weight_g INTEGER CHECK (bag_weight_g IS NULL OR bag_weight_g > 0),
+  total_weight_g INTEGER CHECK (total_weight_g IS NULL OR total_weight_g > 0),
+  quantity INTEGER CHECK (quantity IS NULL OR quantity > 0),
+  rate_paisa INTEGER NOT NULL CHECK (rate_paisa > 0),
+  rate_base_weight_g INTEGER CHECK (rate_base_weight_g IS NULL OR rate_base_weight_g > 0),
+  overridden_total INTEGER,
+  -- Integer half-up: (a*b + c/2) / c. Identical in SQLite, Postgres and Dart.
+  calculated_total INTEGER GENERATED ALWAYS AS (
+    CASE uom
+      WHEN 'kg' THEN (rate_paisa * total_weight_g + rate_base_weight_g / 2) / rate_base_weight_g
+      WHEN 'unit' THEN rate_paisa * quantity
+    END
+  ) STORED,
+  final_amount INTEGER GENERATED ALWAYS AS (COALESCE(overridden_total, calculated_total)) STORED,
+  FOREIGN KEY (firm_id, transaction_id) REFERENCES transactions (firm_id, id) ON DELETE CASCADE,
+  FOREIGN KEY (firm_id, item_id) REFERENCES items (firm_id, id),
+  CHECK ((sale_mode = 'by_bags') = (bag_count IS NOT NULL AND bag_weight_g IS NOT NULL)),
+  CHECK ((uom = 'kg') = (total_weight_g IS NOT NULL AND rate_base_weight_g IS NOT NULL)),
+  CHECK ((uom = 'unit') = (quantity IS NOT NULL))
+) AS TransactionLineRow;
+CREATE UNIQUE INDEX idx_lines_no ON transaction_lines (firm_id, transaction_id, line_no);
+CREATE INDEX idx_lines_item ON transaction_lines (firm_id, item_id);
+
+-- Append-only. id is uuid5(transaction_id, loser stamp, loser device) so every
+-- writer of the same losing version collides into one row.
+CREATE TABLE transaction_history (
+  id TEXT NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36),
+  firm_id TEXT NOT NULL,
+  transaction_id TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  snapshot TEXT NOT NULL,                 -- JSON {schema_version, header, lines, customer_name, item_names}
+  reason TEXT NOT NULL CHECK (reason IN ('edit', 'delete', 'sync_overwrite', 'restore')),
+  changed_at INTEGER NOT NULL,
+  changed_by_user_id TEXT NOT NULL,
+  changed_by_device_id TEXT NOT NULL,
+  FOREIGN KEY (firm_id, transaction_id) REFERENCES transactions (firm_id, id) ON DELETE CASCADE
+) AS TransactionHistoryRow;
+CREATE INDEX idx_history_txn ON transaction_history (firm_id, transaction_id, changed_at);
+
+CREATE TABLE print_log (
+  id TEXT NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36),
+  firm_id TEXT NOT NULL,
+  transaction_id TEXT,
+  customer_id TEXT,
+  kind TEXT NOT NULL CHECK (kind IN ('slip', 'ledger', 'export_pdf', 'export_png')),
+  printed_at INTEGER NOT NULL,
+  device_id TEXT NOT NULL,
+  printed_balance_after INTEGER,
+  range_from TEXT,
+  range_to TEXT
+) AS PrintLogRow;
+CREATE INDEX idx_print_txn ON print_log (firm_id, transaction_id);
+
+-- Local-only sync bookkeeping (lives inside the per-firm database file).
+CREATE TABLE sync_outbox (
+  target_table TEXT NOT NULL,      -- "transactions", "customers", …; not table_name: drift reserves it
+  row_id TEXT NOT NULL,
+  queued_updated_at INTEGER NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  failed_reason TEXT,
+  PRIMARY KEY (target_table, row_id)
+) AS SyncOutboxRow;
+
+CREATE TABLE sync_orphans (
+  target_table TEXT NOT NULL,      -- "transactions", "customers", …; not table_name: drift reserves it
+  row_id TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  missing_parent_table TEXT NOT NULL,
+  missing_parent_id TEXT NOT NULL,
+  received_at INTEGER NOT NULL,
+  PRIMARY KEY (target_table, row_id)
+) AS SyncOrphanRow;
+
+CREATE TABLE sync_state (
+  device_id TEXT NOT NULL PRIMARY KEY,
+  last_pull_cursor INTEGER NOT NULL DEFAULT 0,
+  clock_offset_ms INTEGER NOT NULL DEFAULT 0,
+  hlc_last INTEGER NOT NULL DEFAULT 0,
+  last_sync_at INTEGER,
+  paused_reason TEXT
+) AS SyncStateRow;
+
+CREATE TABLE app_settings (
+  "key" TEXT NOT NULL PRIMARY KEY,
+  value TEXT NOT NULL
+) AS AppSettingRow;
+
+-- Balances are computed, never stored. Walk-ins have no customer and no ledger.
+CREATE VIEW customer_balances AS
+  SELECT firm_id, customer_id, SUM(signed_amount) AS balance
+  FROM transactions
+  WHERE deleted_at IS NULL AND customer_id IS NOT NULL
+  GROUP BY firm_id, customer_id;

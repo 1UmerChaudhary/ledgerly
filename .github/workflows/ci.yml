@@ -17,14 +17,21 @@ jobs:
       - name: Core tests (pure Dart)
         working-directory: packages/ledgerly_core
         run: dart test --reporter expanded
-      - name: App tests (drift on real SQLite, widget tests as Windows)
+      - name: Data tests (drift on real SQLite)
+        working-directory: packages/ledgerly_data
+        run: dart test --reporter expanded
+      - name: Generated drift code is current
+        working-directory: packages/ledgerly_data
+        run: |
+          dart run build_runner build
+          git diff --exit-code -- lib/src/db/app_database.g.dart || (echo "Run build_runner and commit app_database.g.dart" && exit 1)
+      - name: Migration schema export is current
+        working-directory: packages/ledgerly_data
+        run: |
+          dart run drift_dev schema dump lib/src/db/app_database.dart /tmp/schema_check.json
+          python3 -c "import json,sys; a=json.load(open('/tmp/schema_check.json')); b=json.load(open('drift_schemas/drift_schema_v%d.json' % a['_meta']['version'])); sys.exit(0 if a==b else 1)" || (echo "Schema changed without a new export. Run: dart run drift_dev schema dump lib/src/db/app_database.dart drift_schemas/" && exit 1)
+      - name: App tests (widget tests as Windows)
         working-directory: app
         run: |
-          if [ ! -d test ]; then echo "no app tests yet (pre-M2)"; exit 0; fi
+          if [ ! -d test ]; then echo "no app tests yet (pre-M3)"; exit 0; fi
           flutter test --reporter expanded
-      - name: Migration schema exports are current
-        working-directory: app
-        run: |
-          if [ ! -d drift_schemas ]; then echo "no drift schema yet (pre-M2)"; exit 0; fi
-          dart run drift_dev schema dump lib/data/db/app_database.dart /tmp/schema_check
-          diff -r /tmp/schema_check drift_schemas || (echo "Schema changed without an export. Run: dart run drift_dev schema dump ..." && exit 1)

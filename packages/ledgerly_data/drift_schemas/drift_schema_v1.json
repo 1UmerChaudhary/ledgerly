@@ -1,0 +1,2350 @@
+{
+  "_meta": {
+    "description": "This file contains a serialized version of schema entities for drift.",
+    "version": "1.3.0"
+  },
+  "options": {
+    "store_date_time_values_as_text": true
+  },
+  "entities": [
+    {
+      "id": 0,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "firms",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "primary-key"
+            ]
+          },
+          {
+            "name": "name",
+            "getter_name": "name",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "contact_number",
+            "getter_name": "contactNumber",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "address",
+            "getter_name": "address",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "logo_blob",
+            "getter_name": "logoBlob",
+            "moor_type": "blob",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "number_grouping",
+            "getter_name": "numberGrouping",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL DEFAULT 'pk' CHECK (number_grouping IN ('pk', 'western'))",
+            "default_dart": "const CustomExpression('\\'pk\\'')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "show_paisa",
+            "getter_name": "showPaisa",
+            "moor_type": "bool",
+            "nullable": false,
+            "customConstraints": "NOT NULL DEFAULT FALSE",
+            "default_dart": "const CustomExpression('FALSE')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "default_country_code",
+            "getter_name": "defaultCountryCode",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL DEFAULT '92'",
+            "default_dart": "const CustomExpression('\\'92\\'')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "created_at",
+            "getter_name": "createdAt",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_at",
+            "getter_name": "updatedAt",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_by_device_id",
+            "getter_name": "updatedByDeviceId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "deleted_at",
+            "getter_name": "deletedAt",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": []
+      }
+    },
+    {
+      "id": 1,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "users",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "primary-key"
+            ]
+          },
+          {
+            "name": "name",
+            "getter_name": "name",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "email",
+            "getter_name": "email",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "created_at",
+            "getter_name": "createdAt",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_at",
+            "getter_name": "updatedAt",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_by_device_id",
+            "getter_name": "updatedByDeviceId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "deleted_at",
+            "getter_name": "deletedAt",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": []
+      }
+    },
+    {
+      "id": 2,
+      "references": [
+        0,
+        1
+      ],
+      "type": "table",
+      "data": {
+        "name": "firm_members",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "primary-key"
+            ]
+          },
+          {
+            "name": "firm_id",
+            "getter_name": "firmId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL REFERENCES firms(id)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              {
+                "foreign_key": {
+                  "to": {
+                    "table": "firms",
+                    "column": "id"
+                  },
+                  "initially_deferred": false,
+                  "on_update": null,
+                  "on_delete": null
+                }
+              }
+            ]
+          },
+          {
+            "name": "user_id",
+            "getter_name": "userId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL REFERENCES users(id)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              {
+                "foreign_key": {
+                  "to": {
+                    "table": "users",
+                    "column": "id"
+                  },
+                  "initially_deferred": false,
+                  "on_update": null,
+                  "on_delete": null
+                }
+              }
+            ]
+          },
+          {
+            "name": "role",
+            "getter_name": "role",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL CHECK (role IN ('owner', 'manager', 'clerk'))",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "created_at",
+            "getter_name": "createdAt",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_at",
+            "getter_name": "updatedAt",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_by_device_id",
+            "getter_name": "updatedByDeviceId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "deleted_at",
+            "getter_name": "deletedAt",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": []
+      }
+    },
+    {
+      "id": 3,
+      "references": [
+        2
+      ],
+      "type": "index",
+      "data": {
+        "on": 2,
+        "name": "idx_members_live",
+        "sql": "CREATE UNIQUE INDEX idx_members_live ON firm_members (firm_id, user_id) WHERE deleted_at IS NULL;",
+        "unique": true,
+        "columns": []
+      }
+    },
+    {
+      "id": 4,
+      "references": [
+        0
+      ],
+      "type": "table",
+      "data": {
+        "name": "devices",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "primary-key"
+            ]
+          },
+          {
+            "name": "firm_id",
+            "getter_name": "firmId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL REFERENCES firms(id)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              {
+                "foreign_key": {
+                  "to": {
+                    "table": "firms",
+                    "column": "id"
+                  },
+                  "initially_deferred": false,
+                  "on_update": null,
+                  "on_delete": null
+                }
+              }
+            ]
+          },
+          {
+            "name": "name",
+            "getter_name": "name",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "platform",
+            "getter_name": "platform",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "short_code",
+            "getter_name": "shortCode",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL CHECK (length(short_code) = 4)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "created_at",
+            "getter_name": "createdAt",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_at",
+            "getter_name": "updatedAt",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_by_device_id",
+            "getter_name": "updatedByDeviceId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "deleted_at",
+            "getter_name": "deletedAt",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": []
+      }
+    },
+    {
+      "id": 5,
+      "references": [
+        4
+      ],
+      "type": "index",
+      "data": {
+        "on": 4,
+        "name": "idx_devices_code",
+        "sql": "CREATE UNIQUE INDEX idx_devices_code ON devices (firm_id, short_code);",
+        "unique": true,
+        "columns": []
+      }
+    },
+    {
+      "id": 6,
+      "references": [
+        0,
+        1
+      ],
+      "type": "table",
+      "data": {
+        "name": "items",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "primary-key"
+            ]
+          },
+          {
+            "name": "firm_id",
+            "getter_name": "firmId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL REFERENCES firms(id)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              {
+                "foreign_key": {
+                  "to": {
+                    "table": "firms",
+                    "column": "id"
+                  },
+                  "initially_deferred": false,
+                  "on_update": null,
+                  "on_delete": null
+                }
+              }
+            ]
+          },
+          {
+            "name": "name",
+            "getter_name": "name",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "name_normalized",
+            "getter_name": "nameNormalized",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "default_bag_weight_g",
+            "getter_name": "defaultBagWeightG",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "CHECK (default_bag_weight_g IS NULL OR default_bag_weight_g > 0)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "default_rate_base_weight_g",
+            "getter_name": "defaultRateBaseWeightG",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "CHECK (default_rate_base_weight_g IS NULL OR default_rate_base_weight_g > 0)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "default_uom",
+            "getter_name": "defaultUom",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL DEFAULT 'kg' CHECK (default_uom IN ('kg', 'unit'))",
+            "default_dart": "const CustomExpression('\\'kg\\'')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "track_stock",
+            "getter_name": "trackStock",
+            "moor_type": "bool",
+            "nullable": false,
+            "customConstraints": "NOT NULL DEFAULT FALSE",
+            "default_dart": "const CustomExpression('FALSE')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "created_by_user_id",
+            "getter_name": "createdByUserId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL REFERENCES users(id)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              {
+                "foreign_key": {
+                  "to": {
+                    "table": "users",
+                    "column": "id"
+                  },
+                  "initially_deferred": false,
+                  "on_update": null,
+                  "on_delete": null
+                }
+              }
+            ]
+          },
+          {
+            "name": "created_at",
+            "getter_name": "createdAt",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_at",
+            "getter_name": "updatedAt",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_by_device_id",
+            "getter_name": "updatedByDeviceId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "deleted_at",
+            "getter_name": "deletedAt",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "UNIQUE(firm_id, id)"
+        ],
+        "unique_keys": [
+          [
+            "firm_id",
+            "id"
+          ]
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "references": [
+        6
+      ],
+      "type": "index",
+      "data": {
+        "on": 6,
+        "name": "idx_items_name",
+        "sql": "CREATE INDEX idx_items_name ON items (firm_id, name_normalized);",
+        "unique": false,
+        "columns": []
+      }
+    },
+    {
+      "id": 8,
+      "references": [
+        0,
+        1
+      ],
+      "type": "table",
+      "data": {
+        "name": "customers",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "primary-key"
+            ]
+          },
+          {
+            "name": "firm_id",
+            "getter_name": "firmId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL REFERENCES firms(id)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              {
+                "foreign_key": {
+                  "to": {
+                    "table": "firms",
+                    "column": "id"
+                  },
+                  "initially_deferred": false,
+                  "on_update": null,
+                  "on_delete": null
+                }
+              }
+            ]
+          },
+          {
+            "name": "name",
+            "getter_name": "name",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "name_normalized",
+            "getter_name": "nameNormalized",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "phone",
+            "getter_name": "phone",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "phone_normalized",
+            "getter_name": "phoneNormalized",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "notes",
+            "getter_name": "notes",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "created_by_user_id",
+            "getter_name": "createdByUserId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL REFERENCES users(id)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              {
+                "foreign_key": {
+                  "to": {
+                    "table": "users",
+                    "column": "id"
+                  },
+                  "initially_deferred": false,
+                  "on_update": null,
+                  "on_delete": null
+                }
+              }
+            ]
+          },
+          {
+            "name": "merged_into_id",
+            "getter_name": "mergedIntoId",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": "REFERENCES customers(id)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              {
+                "foreign_key": {
+                  "to": {
+                    "table": "customers",
+                    "column": "id"
+                  },
+                  "initially_deferred": false,
+                  "on_update": null,
+                  "on_delete": null
+                }
+              }
+            ]
+          },
+          {
+            "name": "needs_review",
+            "getter_name": "needsReview",
+            "moor_type": "bool",
+            "nullable": false,
+            "customConstraints": "NOT NULL DEFAULT FALSE",
+            "default_dart": "const CustomExpression('FALSE')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "created_at",
+            "getter_name": "createdAt",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_at",
+            "getter_name": "updatedAt",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_by_device_id",
+            "getter_name": "updatedByDeviceId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "deleted_at",
+            "getter_name": "deletedAt",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "UNIQUE(firm_id, id)"
+        ],
+        "unique_keys": [
+          [
+            "firm_id",
+            "id"
+          ]
+        ]
+      }
+    },
+    {
+      "id": 9,
+      "references": [
+        8
+      ],
+      "type": "index",
+      "data": {
+        "on": 8,
+        "name": "idx_customers_name",
+        "sql": "CREATE INDEX idx_customers_name ON customers (firm_id, name_normalized);",
+        "unique": false,
+        "columns": []
+      }
+    },
+    {
+      "id": 10,
+      "references": [
+        8
+      ],
+      "type": "index",
+      "data": {
+        "on": 8,
+        "name": "idx_customers_phone",
+        "sql": "CREATE UNIQUE INDEX idx_customers_phone ON customers (firm_id, phone_normalized)\n  WHERE deleted_at IS NULL AND merged_into_id IS NULL AND phone_normalized IS NOT NULL;",
+        "unique": true,
+        "columns": []
+      }
+    },
+    {
+      "id": 11,
+      "references": [
+        0,
+        1,
+        8
+      ],
+      "type": "table",
+      "data": {
+        "name": "transactions",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "primary-key"
+            ]
+          },
+          {
+            "name": "firm_id",
+            "getter_name": "firmId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL REFERENCES firms(id)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              {
+                "foreign_key": {
+                  "to": {
+                    "table": "firms",
+                    "column": "id"
+                  },
+                  "initially_deferred": false,
+                  "on_update": null,
+                  "on_delete": null
+                }
+              }
+            ]
+          },
+          {
+            "name": "customer_id",
+            "getter_name": "customerId",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "device_short_code",
+            "getter_name": "deviceShortCode",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "display_seq",
+            "getter_name": "displaySeq",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL CHECK (display_seq > 0)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "type",
+            "getter_name": "type",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL CHECK (type IN ('sale', 'purchase', 'cash_in', 'cash_out', 'opening_balance', 'adjustment'))",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "entry_date",
+            "getter_name": "entryDate",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL CHECK (entry_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]')",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "description",
+            "getter_name": "description",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "version",
+            "getter_name": "version",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL DEFAULT 1 CHECK (version >= 1)",
+            "default_dart": "const CustomExpression('1')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "calculated_total",
+            "getter_name": "calculatedTotal",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "overridden_total",
+            "getter_name": "overriddenTotal",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "overridden_total_basis",
+            "getter_name": "overriddenTotalBasis",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "final_amount",
+            "getter_name": "finalAmount",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "signed_amount",
+            "getter_name": "signedAmount",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "GENERATED ALWAYS AS (CASE type WHEN 'sale' THEN final_amount WHEN 'cash_out' THEN final_amount WHEN 'opening_balance' THEN final_amount WHEN 'adjustment' THEN final_amount WHEN 'purchase' THEN -final_amount WHEN 'cash_in' THEN -final_amount END) STORED",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              {
+                "generated_as": {
+                  "dart_expression": {
+                    "elements": [
+                      "const ",
+                      {
+                        "lexeme": "CustomExpression",
+                        "import_uri": "package:drift/drift.dart"
+                      },
+                      "('CASE type WHEN \\'sale\\' THEN final_amount WHEN \\'cash_out\\' THEN final_amount WHEN \\'opening_balance\\' THEN final_amount WHEN \\'adjustment\\' THEN final_amount WHEN \\'purchase\\' THEN -final_amount WHEN \\'cash_in\\' THEN -final_amount END')"
+                    ]
+                  },
+                  "stored": true
+                }
+              }
+            ]
+          },
+          {
+            "name": "created_by_user_id",
+            "getter_name": "createdByUserId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL REFERENCES users(id)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              {
+                "foreign_key": {
+                  "to": {
+                    "table": "users",
+                    "column": "id"
+                  },
+                  "initially_deferred": false,
+                  "on_update": null,
+                  "on_delete": null
+                }
+              }
+            ]
+          },
+          {
+            "name": "updated_by_user_id",
+            "getter_name": "updatedByUserId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL REFERENCES users(id)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              {
+                "foreign_key": {
+                  "to": {
+                    "table": "users",
+                    "column": "id"
+                  },
+                  "initially_deferred": false,
+                  "on_update": null,
+                  "on_delete": null
+                }
+              }
+            ]
+          },
+          {
+            "name": "created_at",
+            "getter_name": "createdAt",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_at",
+            "getter_name": "updatedAt",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "updated_by_device_id",
+            "getter_name": "updatedByDeviceId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "deleted_at",
+            "getter_name": "deletedAt",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "UNIQUE(firm_id, id)",
+          "FOREIGN KEY(firm_id, customer_id)REFERENCES customers(firm_id, id)",
+          "CHECK((type = 'adjustment' AND final_amount <> 0)OR(type <> 'adjustment' AND final_amount > 0))"
+        ],
+        "unique_keys": [
+          [
+            "firm_id",
+            "id"
+          ]
+        ]
+      }
+    },
+    {
+      "id": 12,
+      "references": [
+        11
+      ],
+      "type": "index",
+      "data": {
+        "on": 11,
+        "name": "idx_txn_balance",
+        "sql": "CREATE INDEX idx_txn_balance ON transactions (firm_id, customer_id, signed_amount) WHERE deleted_at IS NULL;",
+        "unique": false,
+        "columns": []
+      }
+    },
+    {
+      "id": 13,
+      "references": [
+        11
+      ],
+      "type": "index",
+      "data": {
+        "on": 11,
+        "name": "idx_txn_ledger",
+        "sql": "CREATE INDEX idx_txn_ledger ON transactions (firm_id, customer_id, entry_date, created_at, id) WHERE deleted_at IS NULL;",
+        "unique": false,
+        "columns": []
+      }
+    },
+    {
+      "id": 14,
+      "references": [
+        11
+      ],
+      "type": "index",
+      "data": {
+        "on": 11,
+        "name": "idx_txn_walkin",
+        "sql": "CREATE INDEX idx_txn_walkin ON transactions (firm_id, entry_date) WHERE customer_id IS NULL;",
+        "unique": false,
+        "columns": []
+      }
+    },
+    {
+      "id": 15,
+      "references": [
+        11
+      ],
+      "type": "index",
+      "data": {
+        "on": 11,
+        "name": "idx_txn_display",
+        "sql": "CREATE UNIQUE INDEX idx_txn_display ON transactions (firm_id, device_short_code, display_seq);",
+        "unique": true,
+        "columns": []
+      }
+    },
+    {
+      "id": 16,
+      "references": [
+        11
+      ],
+      "type": "index",
+      "data": {
+        "on": 11,
+        "name": "idx_txn_updated",
+        "sql": "CREATE INDEX idx_txn_updated ON transactions (firm_id, updated_at);",
+        "unique": false,
+        "columns": []
+      }
+    },
+    {
+      "id": 17,
+      "references": [
+        11,
+        6
+      ],
+      "type": "table",
+      "data": {
+        "name": "transaction_lines",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "primary-key"
+            ]
+          },
+          {
+            "name": "firm_id",
+            "getter_name": "firmId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "transaction_id",
+            "getter_name": "transactionId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "line_no",
+            "getter_name": "lineNo",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL CHECK (line_no >= 0)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "item_id",
+            "getter_name": "itemId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "uom",
+            "getter_name": "uom",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL DEFAULT 'kg' CHECK (uom IN ('kg', 'unit'))",
+            "default_dart": "const CustomExpression('\\'kg\\'')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "sale_mode",
+            "getter_name": "saleMode",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL CHECK (sale_mode IN ('by_bags', 'by_weight', 'by_count'))",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "bag_count",
+            "getter_name": "bagCount",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "CHECK (bag_count IS NULL OR bag_count > 0)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "bag_weight_g",
+            "getter_name": "bagWeightG",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "CHECK (bag_weight_g IS NULL OR bag_weight_g > 0)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "total_weight_g",
+            "getter_name": "totalWeightG",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "CHECK (total_weight_g IS NULL OR total_weight_g > 0)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "quantity",
+            "getter_name": "quantity",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "CHECK (quantity IS NULL OR quantity > 0)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "rate_paisa",
+            "getter_name": "ratePaisa",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL CHECK (rate_paisa > 0)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "rate_base_weight_g",
+            "getter_name": "rateBaseWeightG",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "CHECK (rate_base_weight_g IS NULL OR rate_base_weight_g > 0)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "overridden_total",
+            "getter_name": "overriddenTotal",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "calculated_total",
+            "getter_name": "calculatedTotal",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "GENERATED ALWAYS AS (CASE uom WHEN 'kg' THEN(rate_paisa * total_weight_g + rate_base_weight_g / 2)/ rate_base_weight_g WHEN 'unit' THEN rate_paisa * quantity END) STORED",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              {
+                "generated_as": {
+                  "dart_expression": {
+                    "elements": [
+                      "const ",
+                      {
+                        "lexeme": "CustomExpression",
+                        "import_uri": "package:drift/drift.dart"
+                      },
+                      "('CASE uom WHEN \\'kg\\' THEN(rate_paisa * total_weight_g + rate_base_weight_g / 2)/ rate_base_weight_g WHEN \\'unit\\' THEN rate_paisa * quantity END')"
+                    ]
+                  },
+                  "stored": true
+                }
+              }
+            ]
+          },
+          {
+            "name": "final_amount",
+            "getter_name": "finalAmount",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "GENERATED ALWAYS AS (COALESCE(overridden_total, calculated_total)) STORED",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              {
+                "generated_as": {
+                  "dart_expression": {
+                    "elements": [
+                      "const ",
+                      {
+                        "lexeme": "CustomExpression",
+                        "import_uri": "package:drift/drift.dart"
+                      },
+                      "('COALESCE(overridden_total, calculated_total)')"
+                    ]
+                  },
+                  "stored": true
+                }
+              }
+            ]
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "FOREIGN KEY(firm_id, transaction_id)REFERENCES transactions(firm_id, id)ON DELETE CASCADE",
+          "FOREIGN KEY(firm_id, item_id)REFERENCES items(firm_id, id)",
+          "CHECK((sale_mode = 'by_bags')=(bag_count IS NOT NULL AND bag_weight_g IS NOT NULL))",
+          "CHECK((uom = 'kg')=(total_weight_g IS NOT NULL AND rate_base_weight_g IS NOT NULL))",
+          "CHECK((uom = 'unit')=(quantity IS NOT NULL))"
+        ]
+      }
+    },
+    {
+      "id": 18,
+      "references": [
+        17
+      ],
+      "type": "index",
+      "data": {
+        "on": 17,
+        "name": "idx_lines_no",
+        "sql": "CREATE UNIQUE INDEX idx_lines_no ON transaction_lines (firm_id, transaction_id, line_no);",
+        "unique": true,
+        "columns": []
+      }
+    },
+    {
+      "id": 19,
+      "references": [
+        17
+      ],
+      "type": "index",
+      "data": {
+        "on": 17,
+        "name": "idx_lines_item",
+        "sql": "CREATE INDEX idx_lines_item ON transaction_lines (firm_id, item_id);",
+        "unique": false,
+        "columns": []
+      }
+    },
+    {
+      "id": 20,
+      "references": [
+        11
+      ],
+      "type": "table",
+      "data": {
+        "name": "transaction_history",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "primary-key"
+            ]
+          },
+          {
+            "name": "firm_id",
+            "getter_name": "firmId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "transaction_id",
+            "getter_name": "transactionId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "version",
+            "getter_name": "version",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "snapshot",
+            "getter_name": "snapshot",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "reason",
+            "getter_name": "reason",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL CHECK (reason IN ('edit', 'delete', 'sync_overwrite', 'restore'))",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "changed_at",
+            "getter_name": "changedAt",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "changed_by_user_id",
+            "getter_name": "changedByUserId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "changed_by_device_id",
+            "getter_name": "changedByDeviceId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "FOREIGN KEY(firm_id, transaction_id)REFERENCES transactions(firm_id, id)ON DELETE CASCADE"
+        ]
+      }
+    },
+    {
+      "id": 21,
+      "references": [
+        20
+      ],
+      "type": "index",
+      "data": {
+        "on": 20,
+        "name": "idx_history_txn",
+        "sql": "CREATE INDEX idx_history_txn ON transaction_history (firm_id, transaction_id, changed_at);",
+        "unique": false,
+        "columns": []
+      }
+    },
+    {
+      "id": 22,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "print_log",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "id",
+            "getter_name": "id",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36)",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "primary-key"
+            ]
+          },
+          {
+            "name": "firm_id",
+            "getter_name": "firmId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "transaction_id",
+            "getter_name": "transactionId",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "customer_id",
+            "getter_name": "customerId",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "kind",
+            "getter_name": "kind",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL CHECK (kind IN ('slip', 'ledger', 'export_pdf', 'export_png'))",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "printed_at",
+            "getter_name": "printedAt",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "device_id",
+            "getter_name": "deviceId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "printed_balance_after",
+            "getter_name": "printedBalanceAfter",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "range_from",
+            "getter_name": "rangeFrom",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "range_to",
+            "getter_name": "rangeTo",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": []
+      }
+    },
+    {
+      "id": 23,
+      "references": [
+        22
+      ],
+      "type": "index",
+      "data": {
+        "on": 22,
+        "name": "idx_print_txn",
+        "sql": "CREATE INDEX idx_print_txn ON print_log (firm_id, transaction_id);",
+        "unique": false,
+        "columns": []
+      }
+    },
+    {
+      "id": 24,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "sync_outbox",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "target_table",
+            "getter_name": "targetTable",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "row_id",
+            "getter_name": "rowId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "queued_updated_at",
+            "getter_name": "queuedUpdatedAt",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "attempts",
+            "getter_name": "attempts",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL DEFAULT 0",
+            "default_dart": "const CustomExpression('0')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "failed_reason",
+            "getter_name": "failedReason",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "PRIMARY KEY(target_table, row_id)"
+        ],
+        "explicit_pk": [
+          "target_table",
+          "row_id"
+        ]
+      }
+    },
+    {
+      "id": 25,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "sync_orphans",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "target_table",
+            "getter_name": "targetTable",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "row_id",
+            "getter_name": "rowId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "payload",
+            "getter_name": "payload",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "missing_parent_table",
+            "getter_name": "missingParentTable",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "missing_parent_id",
+            "getter_name": "missingParentId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "received_at",
+            "getter_name": "receivedAt",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": [
+          "PRIMARY KEY(target_table, row_id)"
+        ],
+        "explicit_pk": [
+          "target_table",
+          "row_id"
+        ]
+      }
+    },
+    {
+      "id": 26,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "sync_state",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "device_id",
+            "getter_name": "deviceId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL PRIMARY KEY",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "primary-key"
+            ]
+          },
+          {
+            "name": "last_pull_cursor",
+            "getter_name": "lastPullCursor",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL DEFAULT 0",
+            "default_dart": "const CustomExpression('0')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "clock_offset_ms",
+            "getter_name": "clockOffsetMs",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL DEFAULT 0",
+            "default_dart": "const CustomExpression('0')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "hlc_last",
+            "getter_name": "hlcLast",
+            "moor_type": "int",
+            "nullable": false,
+            "customConstraints": "NOT NULL DEFAULT 0",
+            "default_dart": "const CustomExpression('0')",
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "last_sync_at",
+            "getter_name": "lastSyncAt",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "paused_reason",
+            "getter_name": "pausedReason",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": "",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": []
+      }
+    },
+    {
+      "id": 27,
+      "references": [],
+      "type": "table",
+      "data": {
+        "name": "app_settings",
+        "was_declared_in_moor": true,
+        "columns": [
+          {
+            "name": "key",
+            "getter_name": "key",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL PRIMARY KEY",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": [
+              "primary-key"
+            ]
+          },
+          {
+            "name": "value",
+            "getter_name": "value",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": "NOT NULL",
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ],
+        "is_virtual": false,
+        "without_rowid": false,
+        "constraints": []
+      }
+    },
+    {
+      "id": 28,
+      "references": [
+        11
+      ],
+      "type": "view",
+      "data": {
+        "name": "customer_balances",
+        "sql": "CREATE VIEW customer_balances AS SELECT firm_id, customer_id, SUM(signed_amount) AS balance FROM transactions WHERE deleted_at IS NULL AND customer_id IS NOT NULL GROUP BY firm_id, customer_id",
+        "dart_info_name": "CustomerBalances",
+        "columns": [
+          {
+            "name": "firm_id",
+            "getter_name": "firmId",
+            "moor_type": "string",
+            "nullable": false,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "customer_id",
+            "getter_name": "customerId",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "balance",
+            "getter_name": "balance",
+            "moor_type": "int",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          }
+        ]
+      }
+    }
+  ],
+  "fixed_sql": [
+    {
+      "name": "firms",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"firms\" (\"id\" TEXT NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36), \"name\" TEXT NOT NULL, \"contact_number\" TEXT NOT NULL, \"address\" TEXT, \"logo_blob\" BLOB, \"number_grouping\" TEXT NOT NULL DEFAULT 'pk' CHECK (number_grouping IN ('pk', 'western')), \"show_paisa\" INTEGER NOT NULL DEFAULT FALSE, \"default_country_code\" TEXT NOT NULL DEFAULT '92', \"created_at\" INTEGER NOT NULL, \"updated_at\" INTEGER NOT NULL, \"updated_by_device_id\" TEXT NOT NULL, \"deleted_at\" INTEGER);"
+        }
+      ]
+    },
+    {
+      "name": "users",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"users\" (\"id\" TEXT NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36), \"name\" TEXT NOT NULL, \"email\" TEXT, \"created_at\" INTEGER NOT NULL, \"updated_at\" INTEGER NOT NULL, \"updated_by_device_id\" TEXT NOT NULL, \"deleted_at\" INTEGER);"
+        }
+      ]
+    },
+    {
+      "name": "firm_members",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"firm_members\" (\"id\" TEXT NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36), \"firm_id\" TEXT NOT NULL REFERENCES firms(id), \"user_id\" TEXT NOT NULL REFERENCES users(id), \"role\" TEXT NOT NULL CHECK (role IN ('owner', 'manager', 'clerk')), \"created_at\" INTEGER NOT NULL, \"updated_at\" INTEGER NOT NULL, \"updated_by_device_id\" TEXT NOT NULL, \"deleted_at\" INTEGER);"
+        }
+      ]
+    },
+    {
+      "name": "idx_members_live",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE UNIQUE INDEX idx_members_live ON firm_members (firm_id, user_id) WHERE deleted_at IS NULL"
+        }
+      ]
+    },
+    {
+      "name": "devices",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"devices\" (\"id\" TEXT NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36), \"firm_id\" TEXT NOT NULL REFERENCES firms(id), \"name\" TEXT NOT NULL, \"platform\" TEXT NOT NULL, \"short_code\" TEXT NOT NULL CHECK (length(short_code) = 4), \"created_at\" INTEGER NOT NULL, \"updated_at\" INTEGER NOT NULL, \"updated_by_device_id\" TEXT NOT NULL, \"deleted_at\" INTEGER);"
+        }
+      ]
+    },
+    {
+      "name": "idx_devices_code",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE UNIQUE INDEX idx_devices_code ON devices (firm_id, short_code)"
+        }
+      ]
+    },
+    {
+      "name": "items",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"items\" (\"id\" TEXT NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36), \"firm_id\" TEXT NOT NULL REFERENCES firms(id), \"name\" TEXT NOT NULL, \"name_normalized\" TEXT NOT NULL, \"default_bag_weight_g\" INTEGER CHECK (default_bag_weight_g IS NULL OR default_bag_weight_g > 0), \"default_rate_base_weight_g\" INTEGER CHECK (default_rate_base_weight_g IS NULL OR default_rate_base_weight_g > 0), \"default_uom\" TEXT NOT NULL DEFAULT 'kg' CHECK (default_uom IN ('kg', 'unit')), \"track_stock\" INTEGER NOT NULL DEFAULT FALSE, \"created_by_user_id\" TEXT NOT NULL REFERENCES users(id), \"created_at\" INTEGER NOT NULL, \"updated_at\" INTEGER NOT NULL, \"updated_by_device_id\" TEXT NOT NULL, \"deleted_at\" INTEGER, UNIQUE(firm_id, id));"
+        }
+      ]
+    },
+    {
+      "name": "idx_items_name",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX idx_items_name ON items (firm_id, name_normalized)"
+        }
+      ]
+    },
+    {
+      "name": "customers",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"customers\" (\"id\" TEXT NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36), \"firm_id\" TEXT NOT NULL REFERENCES firms(id), \"name\" TEXT NOT NULL, \"name_normalized\" TEXT NOT NULL, \"phone\" TEXT, \"phone_normalized\" TEXT, \"notes\" TEXT, \"created_by_user_id\" TEXT NOT NULL REFERENCES users(id), \"merged_into_id\" TEXT REFERENCES customers(id), \"needs_review\" INTEGER NOT NULL DEFAULT FALSE, \"created_at\" INTEGER NOT NULL, \"updated_at\" INTEGER NOT NULL, \"updated_by_device_id\" TEXT NOT NULL, \"deleted_at\" INTEGER, UNIQUE(firm_id, id));"
+        }
+      ]
+    },
+    {
+      "name": "idx_customers_name",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX idx_customers_name ON customers (firm_id, name_normalized)"
+        }
+      ]
+    },
+    {
+      "name": "idx_customers_phone",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE UNIQUE INDEX idx_customers_phone ON customers (firm_id, phone_normalized) WHERE deleted_at IS NULL AND merged_into_id IS NULL AND phone_normalized IS NOT NULL"
+        }
+      ]
+    },
+    {
+      "name": "transactions",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"transactions\" (\"id\" TEXT NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36), \"firm_id\" TEXT NOT NULL REFERENCES firms(id), \"customer_id\" TEXT, \"device_short_code\" TEXT NOT NULL, \"display_seq\" INTEGER NOT NULL CHECK (display_seq > 0), \"type\" TEXT NOT NULL CHECK (type IN ('sale', 'purchase', 'cash_in', 'cash_out', 'opening_balance', 'adjustment')), \"entry_date\" TEXT NOT NULL CHECK (entry_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'), \"description\" TEXT, \"version\" INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1), \"calculated_total\" INTEGER NOT NULL, \"overridden_total\" INTEGER, \"overridden_total_basis\" INTEGER, \"final_amount\" INTEGER NOT NULL, \"signed_amount\" INTEGER GENERATED ALWAYS AS (CASE type WHEN 'sale' THEN final_amount WHEN 'cash_out' THEN final_amount WHEN 'opening_balance' THEN final_amount WHEN 'adjustment' THEN final_amount WHEN 'purchase' THEN -final_amount WHEN 'cash_in' THEN -final_amount END) STORED, \"created_by_user_id\" TEXT NOT NULL REFERENCES users(id), \"updated_by_user_id\" TEXT NOT NULL REFERENCES users(id), \"created_at\" INTEGER NOT NULL, \"updated_at\" INTEGER NOT NULL, \"updated_by_device_id\" TEXT NOT NULL, \"deleted_at\" INTEGER, UNIQUE(firm_id, id), FOREIGN KEY(firm_id, customer_id)REFERENCES customers(firm_id, id), CHECK((type = 'adjustment' AND final_amount <> 0)OR(type <> 'adjustment' AND final_amount > 0)));"
+        }
+      ]
+    },
+    {
+      "name": "idx_txn_balance",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX idx_txn_balance ON transactions (firm_id, customer_id, signed_amount) WHERE deleted_at IS NULL"
+        }
+      ]
+    },
+    {
+      "name": "idx_txn_ledger",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX idx_txn_ledger ON transactions (firm_id, customer_id, entry_date, created_at, id) WHERE deleted_at IS NULL"
+        }
+      ]
+    },
+    {
+      "name": "idx_txn_walkin",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX idx_txn_walkin ON transactions (firm_id, entry_date) WHERE customer_id IS NULL"
+        }
+      ]
+    },
+    {
+      "name": "idx_txn_display",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE UNIQUE INDEX idx_txn_display ON transactions (firm_id, device_short_code, display_seq)"
+        }
+      ]
+    },
+    {
+      "name": "idx_txn_updated",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX idx_txn_updated ON transactions (firm_id, updated_at)"
+        }
+      ]
+    },
+    {
+      "name": "transaction_lines",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"transaction_lines\" (\"id\" TEXT NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36), \"firm_id\" TEXT NOT NULL, \"transaction_id\" TEXT NOT NULL, \"line_no\" INTEGER NOT NULL CHECK (line_no >= 0), \"item_id\" TEXT NOT NULL, \"uom\" TEXT NOT NULL DEFAULT 'kg' CHECK (uom IN ('kg', 'unit')), \"sale_mode\" TEXT NOT NULL CHECK (sale_mode IN ('by_bags', 'by_weight', 'by_count')), \"bag_count\" INTEGER CHECK (bag_count IS NULL OR bag_count > 0), \"bag_weight_g\" INTEGER CHECK (bag_weight_g IS NULL OR bag_weight_g > 0), \"total_weight_g\" INTEGER CHECK (total_weight_g IS NULL OR total_weight_g > 0), \"quantity\" INTEGER CHECK (quantity IS NULL OR quantity > 0), \"rate_paisa\" INTEGER NOT NULL CHECK (rate_paisa > 0), \"rate_base_weight_g\" INTEGER CHECK (rate_base_weight_g IS NULL OR rate_base_weight_g > 0), \"overridden_total\" INTEGER, \"calculated_total\" INTEGER GENERATED ALWAYS AS (CASE uom WHEN 'kg' THEN(rate_paisa * total_weight_g + rate_base_weight_g / 2)/ rate_base_weight_g WHEN 'unit' THEN rate_paisa * quantity END) STORED, \"final_amount\" INTEGER GENERATED ALWAYS AS (COALESCE(overridden_total, calculated_total)) STORED, FOREIGN KEY(firm_id, transaction_id)REFERENCES transactions(firm_id, id)ON DELETE CASCADE, FOREIGN KEY(firm_id, item_id)REFERENCES items(firm_id, id), CHECK((sale_mode = 'by_bags')=(bag_count IS NOT NULL AND bag_weight_g IS NOT NULL)), CHECK((uom = 'kg')=(total_weight_g IS NOT NULL AND rate_base_weight_g IS NOT NULL)), CHECK((uom = 'unit')=(quantity IS NOT NULL)));"
+        }
+      ]
+    },
+    {
+      "name": "idx_lines_no",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE UNIQUE INDEX idx_lines_no ON transaction_lines (firm_id, transaction_id, line_no)"
+        }
+      ]
+    },
+    {
+      "name": "idx_lines_item",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX idx_lines_item ON transaction_lines (firm_id, item_id)"
+        }
+      ]
+    },
+    {
+      "name": "transaction_history",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"transaction_history\" (\"id\" TEXT NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36), \"firm_id\" TEXT NOT NULL, \"transaction_id\" TEXT NOT NULL, \"version\" INTEGER NOT NULL, \"snapshot\" TEXT NOT NULL, \"reason\" TEXT NOT NULL CHECK (reason IN ('edit', 'delete', 'sync_overwrite', 'restore')), \"changed_at\" INTEGER NOT NULL, \"changed_by_user_id\" TEXT NOT NULL, \"changed_by_device_id\" TEXT NOT NULL, FOREIGN KEY(firm_id, transaction_id)REFERENCES transactions(firm_id, id)ON DELETE CASCADE);"
+        }
+      ]
+    },
+    {
+      "name": "idx_history_txn",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX idx_history_txn ON transaction_history (firm_id, transaction_id, changed_at)"
+        }
+      ]
+    },
+    {
+      "name": "print_log",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"print_log\" (\"id\" TEXT NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36), \"firm_id\" TEXT NOT NULL, \"transaction_id\" TEXT, \"customer_id\" TEXT, \"kind\" TEXT NOT NULL CHECK (kind IN ('slip', 'ledger', 'export_pdf', 'export_png')), \"printed_at\" INTEGER NOT NULL, \"device_id\" TEXT NOT NULL, \"printed_balance_after\" INTEGER, \"range_from\" TEXT, \"range_to\" TEXT);"
+        }
+      ]
+    },
+    {
+      "name": "idx_print_txn",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX idx_print_txn ON print_log (firm_id, transaction_id)"
+        }
+      ]
+    },
+    {
+      "name": "sync_outbox",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"sync_outbox\" (\"target_table\" TEXT NOT NULL, \"row_id\" TEXT NOT NULL, \"queued_updated_at\" INTEGER NOT NULL, \"attempts\" INTEGER NOT NULL DEFAULT 0, \"failed_reason\" TEXT, PRIMARY KEY(target_table, row_id));"
+        }
+      ]
+    },
+    {
+      "name": "sync_orphans",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"sync_orphans\" (\"target_table\" TEXT NOT NULL, \"row_id\" TEXT NOT NULL, \"payload\" TEXT NOT NULL, \"missing_parent_table\" TEXT NOT NULL, \"missing_parent_id\" TEXT NOT NULL, \"received_at\" INTEGER NOT NULL, PRIMARY KEY(target_table, row_id));"
+        }
+      ]
+    },
+    {
+      "name": "sync_state",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"sync_state\" (\"device_id\" TEXT NOT NULL PRIMARY KEY, \"last_pull_cursor\" INTEGER NOT NULL DEFAULT 0, \"clock_offset_ms\" INTEGER NOT NULL DEFAULT 0, \"hlc_last\" INTEGER NOT NULL DEFAULT 0, \"last_sync_at\" INTEGER, \"paused_reason\" TEXT);"
+        }
+      ]
+    },
+    {
+      "name": "app_settings",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE TABLE IF NOT EXISTS \"app_settings\" (\"key\" TEXT NOT NULL PRIMARY KEY, \"value\" TEXT NOT NULL);"
+        }
+      ]
+    },
+    {
+      "name": "customer_balances",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE VIEW customer_balances AS SELECT firm_id, customer_id, SUM(signed_amount) AS balance FROM transactions WHERE deleted_at IS NULL AND customer_id IS NOT NULL GROUP BY firm_id, customer_id"
+        }
+      ]
+    }
+  ]
+}

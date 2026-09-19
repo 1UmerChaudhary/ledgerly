@@ -4,4 +4,5 @@ environment:
   sdk: ^3.13.0
 workspace:
   - packages/ledgerly_core
+  - packages/ledgerly_data
   - app
