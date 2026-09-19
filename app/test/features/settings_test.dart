@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ledgerly/features/settings/settings_providers.dart';
+import 'package:ledgerly/printing/print_actions.dart';
+import 'package:ledgerly/printing/printing_service.dart';
 import 'package:ledgerly_core/ledgerly_core.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 
@@ -81,6 +84,166 @@ void main() {
         find.textContaining('Backed up'),
         findsWidgets,
       ); // survives leaving the screen
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
+    'no printer chosen shows "Ask each time"; choosing one from the list '
+    'saves it as the default',
+    (tester) async {
+      final container = await pumpLedgerly(tester, seed: seed);
+      (container.read(
+        printerDiscoveryProvider,
+      ) as FakePrinterDiscovery).printers = const [
+        PrinterInfo(name: 'Thermal-80mm', url: 'usb://001'),
+      ];
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+      expect(find.text('Ask each time'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('settings.choosePrinter')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('settings.printerOption.Thermal-80mm')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Thermal-80mm'), findsOneWidget);
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
+    'choosing "Ask each time" clears a previously chosen default printer',
+    (tester) async {
+      final container = await pumpLedgerly(tester, seed: seed);
+      (container.read(
+        printerDiscoveryProvider,
+      ) as FakePrinterDiscovery).printers = const [
+        PrinterInfo(name: 'Thermal-80mm', url: 'usb://001'),
+      ];
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+      await tester.tap(find.byKey(const Key('settings.choosePrinter')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('settings.printerOption.Thermal-80mm')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Thermal-80mm'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('settings.choosePrinter')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings.printerOption.none')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ask each time'), findsOneWidget);
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets('Browse fills the backup folder field with the picked folder', (
+    tester,
+  ) async {
+    final container = await pumpLedgerly(tester, seed: seed);
+    (container.read(
+      nativePickersProvider,
+    ) as FakeNativePickers).folderToReturn = r'D:\LedgerlyBackups';
+    await pressCtrl(tester, LogicalKeyboardKey.comma);
+
+    await tester.tap(find.byKey(const Key('settings.browseBackupFolder')));
+    await tester.pumpAndSettle();
+
+    final field = tester.widget<TextField>(
+      find.byKey(const Key('settings.backupFolder')),
+    );
+    expect(field.controller!.text, r'D:\LedgerlyBackups');
+  }, variant: windowsOnly);
+
+  testWidgets('Restore does nothing when the file picker is cancelled', (
+    tester,
+  ) async {
+    final container = await pumpLedgerly(tester, seed: seed);
+    (container.read(nativePickersProvider) as FakeNativePickers).fileToReturn =
+        null;
+    await pressCtrl(tester, LogicalKeyboardKey.comma);
+
+    await tester.tap(find.byKey(const Key('settings.restore')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('settings.restoreConfirm')), findsNothing);
+    expect(find.byKey(const Key('settings.screen')), findsOneWidget);
+  }, variant: windowsOnly);
+
+  testWidgets(
+    'Restore shows a confirmation naming the picked file; cancelling it '
+    'does nothing',
+    (tester) async {
+      final container = await pumpLedgerly(tester, seed: seed);
+      (container.read(
+        nativePickersProvider,
+      ) as FakeNativePickers).fileToReturn = r'D:\backup.db';
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+
+      await tester.tap(find.byKey(const Key('settings.restore')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining(r'D:\backup.db'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('settings.restoreConfirm.cancel')));
+      await tester.pumpAndSettle();
+
+      final fake = container.read(restoreServiceProvider) as FakeBackupService;
+      expect(fake.restoredPath, isNull);
+      expect(find.byKey(const Key('settings.screen')), findsOneWidget);
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
+    'confirming restore of a valid backup replaces the data and reopens '
+    'the firm',
+    (tester) async {
+      final container = await pumpLedgerly(tester, seed: seed);
+      (container.read(
+        nativePickersProvider,
+      ) as FakeNativePickers).fileToReturn = r'D:\backup.db';
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+
+      await tester.tap(find.byKey(const Key('settings.restore')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('settings.restoreConfirm.confirm')),
+      );
+      await tester.pumpAndSettle();
+
+      final fake = container.read(restoreServiceProvider) as FakeBackupService;
+      expect(fake.restoredPath, r'D:\backup.db');
+      expect(find.textContaining('Restored'), findsOneWidget);
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
+    'confirming restore of a file that does not exist shows the failure '
+    'and leaves the app working',
+    (tester) async {
+      final container = await pumpLedgerly(tester, seed: seed);
+      (container.read(
+        nativePickersProvider,
+      ) as FakeNativePickers).fileToReturn = r'D:\junk.db';
+      (container.read(restoreServiceProvider) as FakeBackupService).rejectWith =
+          'That file does not exist.';
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+
+      await tester.tap(find.byKey(const Key('settings.restore')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('settings.restoreConfirm.confirm')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('does not exist'), findsOneWidget);
+      final fake = container.read(restoreServiceProvider) as FakeBackupService;
+      expect(fake.restoredPath, isNull); // validated and rejected first
     },
     variant: windowsOnly,
   );

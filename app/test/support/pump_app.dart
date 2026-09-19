@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 
 import 'dart:io';
@@ -12,6 +13,7 @@ import 'package:ledgerly/bootstrap/global_prefs.dart';
 import 'package:ledgerly/bootstrap/providers.dart';
 import 'package:ledgerly_core/ledgerly_core.dart';
 import 'package:ledgerly/features/settings/settings_providers.dart';
+import 'package:ledgerly/platform/native_pickers.dart';
 import 'package:ledgerly/printing/print_actions.dart';
 import 'package:ledgerly/printing/printing_service.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
@@ -24,31 +26,61 @@ Future<ProviderContainer> pumpLedgerly(
   WidgetTester tester, {
   Future<void> Function(AppDatabase db, DeviceContext ctx)? seed,
 }) async {
+  // Every test opens its own in-memory database (plus FakeBackupService's
+  // own throwaway one), which drift otherwise warns about as if it were the
+  // production multi-database misuse it's meant to catch.
+  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
 
   final prefs = InMemoryGlobalPrefs();
-  final db = AppDatabase(NativeDatabase.memory());
-  addTearDown(db.close);
+  const firmId = '11111111-1111-4111-8111-111111111111';
   var clock = 1000;
-  final ctx = DeviceContext(
-    firmId: '11111111-1111-4111-8111-111111111111',
+  DeviceContext makeCtx() => DeviceContext(
+    firmId: firmId,
     deviceId: prefs.deviceId,
     deviceShortCode: deviceShortCode(prefs.deviceId),
     userId: '33333333-3333-4333-8333-333333333333',
     hlc: Hlc(clock: () => clock++),
   );
+  // A real reopen (production's databaseOpenerProvider) always returns a
+  // working connection to the same file, whether that's the connection
+  // opened moments ago (first-launch wizard's create → invalidate) or a
+  // brand new one after a restore replaced the file. This stand-in mirrors
+  // both cases without ever touching disk: it hands back the same
+  // in-memory database while it is still open, and only opens (and, when a
+  // seed was given, reseeds) a fresh one once the old one has been closed —
+  // which restoreFromPickedFile does deliberately, to release the file
+  // before copying over it.
+  var db = AppDatabase(NativeDatabase.memory());
+  final opened = <AppDatabase>[db];
+  Future<AppDatabase> openDb(String _) async {
+    try {
+      await db.customSelect('SELECT 1').getSingle();
+      return db;
+    } on Exception {
+      db = AppDatabase(NativeDatabase.memory());
+      opened.add(db);
+      if (seed != null) await seed(db, makeCtx());
+      return db;
+    }
+  }
+
   if (seed != null) {
-    await seed(db, ctx);
-    await prefs.setLastFirmId(ctx.firmId);
+    await seed(db, makeCtx());
+    await prefs.setLastFirmId(firmId);
   }
   // Real filesystem writes from the flutter_tester binary hang in this
   // sandboxed CI environment (proven by direct probing), so tests never touch
-  // disk: AppPaths points somewhere inert, and the backup runner is faked.
-  // BackupService's real file behaviour is already tested end-to-end in
-  // packages/ledgerly_data/test/backup_service_test.dart via plain `dart test`.
+  // disk: AppPaths points somewhere inert, and the backup runner and restore
+  // service are faked. BackupService's real file behaviour is already tested
+  // end-to-end in packages/ledgerly_data/test/backup_service_test.dart via
+  // plain `dart test`.
   final fakePrinting = FakePrintingService();
+  final fakePickers = FakeNativePickers();
+  final fakePrinterDiscovery = FakePrinterDiscovery();
+  final fakeRestoreService = FakeBackupService();
   final container = ProviderContainer(
     overrides: [
       globalPrefsProvider.overrideWithValue(prefs),
@@ -57,9 +89,23 @@ Future<ProviderContainer> pumpLedgerly(
       ),
       backupRunnerProvider.overrideWith(FakeBackupRunner.new),
       printingServiceProvider.overrideWithValue(fakePrinting),
-      databaseOpenerProvider.overrideWithValue((firmId) async => db),
+      nativePickersProvider.overrideWithValue(fakePickers),
+      printerDiscoveryProvider.overrideWithValue(fakePrinterDiscovery),
+      restoreServiceProvider.overrideWithValue(fakeRestoreService),
+      databaseOpenerProvider.overrideWithValue(openDb),
     ],
   );
+  addTearDown(() async {
+    for (final d in opened) {
+      // A test that exercised restoreFromPickedFile already closed its own
+      // db as part of that flow — closing again here is a no-op either way.
+      try {
+        await d.close();
+      } on Exception {
+        // already closed
+      }
+    }
+  });
   addTearDown(container.dispose);
   await tester.pumpWidget(
     UncontrolledProviderScope(container: container, child: const LedgerlyApp()),
@@ -129,5 +175,69 @@ class FakePrintingService implements PrintingService {
   }) async {
     exportedPngBaseNames.add(suggestedBaseName);
     return exportPngPageCount;
+  }
+}
+
+/// Records what was requested and returns a pre-set answer instead of
+/// opening a real OS folder/file dialog.
+class FakeNativePickers implements NativePickers {
+  String? folderToReturn;
+  String? fileToReturn;
+  int folderPickCount = 0;
+  int filePickCount = 0;
+
+  @override
+  Future<String?> pickFolder() async {
+    folderPickCount++;
+    return folderToReturn;
+  }
+
+  @override
+  Future<String?> pickFile({
+    required List<String> extensions,
+    required String label,
+  }) async {
+    filePickCount++;
+    return fileToReturn;
+  }
+}
+
+/// A fixed, settable printer list instead of the real OS enumeration, which
+/// cannot run in an automated test either.
+class FakePrinterDiscovery implements PrinterDiscovery {
+  List<PrinterInfo> printers = const [];
+
+  @override
+  Future<List<PrinterInfo>> list() async => printers;
+}
+
+/// Records what restore was asked to do instead of touching a real backup
+/// file — real disk I/O cannot run in an automated test here either.
+class FakeBackupService extends BackupService {
+  FakeBackupService()
+    : super(
+        db: AppDatabase(NativeDatabase.memory()),
+        databaseFile: File('unused'),
+        localBackupDir: Directory('unused'),
+      );
+
+  String? restoredPath;
+
+  /// Set to reject the next validation, the way a real corrupt or missing
+  /// file would, without ever touching a real file.
+  String? rejectWith;
+
+  @override
+  void validateBackup(File backupFile) {
+    if (rejectWith case final message?) {
+      throw InvalidBackupException(message);
+    }
+  }
+
+  @override
+  Future<File> restoreFrom(File backupFile) async {
+    validateBackup(backupFile);
+    restoredPath = backupFile.path;
+    return File('unused-pre-restore-copy');
   }
 }

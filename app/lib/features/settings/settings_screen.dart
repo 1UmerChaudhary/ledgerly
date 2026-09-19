@@ -6,9 +6,20 @@ import 'package:ledgerly_core/ledgerly_core.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 
 import '../../bootstrap/providers.dart';
+import '../../printing/print_actions.dart';
+import '../../printing/printing_service.dart';
 import '../../theme/ledgerly_theme.dart';
 import '../dashboard/dashboard_screen.dart';
 import 'settings_providers.dart';
+
+/// Sentinel returned by the printer dialog's "Ask each time" option, kept
+/// distinct from `null` so dismissing the dialog (also `null`) means
+/// "no change" rather than "clear the default".
+class _ClearPrinter {
+  const _ClearPrinter();
+}
+
+const _clearPrinter = _ClearPrinter();
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -68,12 +79,87 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ref.invalidate(dashboardRowsProvider);
   }
 
+  Future<void> _choosePrinter() async {
+    final printers = await ref.read(printerDiscoveryProvider).list();
+    if (!mounted) return;
+    final result = await showDialog<Object?>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        key: const Key('settings.printerDialog'),
+        title: const Text('Choose a printer'),
+        children: [
+          SimpleDialogOption(
+            key: const Key('settings.printerOption.none'),
+            onPressed: () => Navigator.of(dialogContext).pop(_clearPrinter),
+            child: const Text('Ask each time (no default)'),
+          ),
+          for (final p in printers)
+            SimpleDialogOption(
+              key: Key('settings.printerOption.${p.name}'),
+              onPressed: () => Navigator.of(dialogContext).pop(p),
+              child: Text(p.name),
+            ),
+        ],
+      ),
+    );
+    if (result == null) return; // dismissed: leave the current choice as-is
+    final chosen = result == _clearPrinter ? null : result as PrinterInfo;
+    await ref.read(printerChoiceProvider.notifier).set(chosen);
+  }
+
+  Future<void> _browseFolder() async {
+    final picked = await ref.read(nativePickersProvider).pickFolder();
+    if (picked != null) setState(() => _folder.text = picked);
+  }
+
+  Future<bool> _confirmRestore(String path) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        key: const Key('settings.restoreConfirm'),
+        title: const Text('Restore from backup?'),
+        content: Text(
+          'This replaces everything in the current firm with the backup '
+          'at $path. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            key: const Key('settings.restoreConfirm.cancel'),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('settings.restoreConfirm.confirm'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Restore'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  Future<void> _restore() async {
+    try {
+      final outcome = await restoreFromPickedFile(
+        ref,
+        confirm: _confirmRestore,
+      );
+      if (outcome == RestoreOutcome.success && mounted) {
+        setState(() => _message = 'Restored. Reopening the firm…');
+      }
+    } on RestoreFailure catch (e) {
+      if (mounted) setState(() => _message = e.message);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     final firm = ref.watch(firmSettingsProvider).value;
     final folder = ref.watch(backupFolderProvider);
     final backup = ref.watch(backupRunnerProvider);
+    final printer = ref.watch(printerChoiceProvider);
     if (firm != null) _fill(firm, folder);
 
     return CallbackShortcuts(
@@ -163,16 +249,58 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ),
             ]),
+            _section(context, 'Printer', [
+              _field(
+                'Default printer',
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        printer?.name ?? 'Ask each time',
+                        style: TextStyle(color: c.ink2),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    OutlinedButton(
+                      key: const Key('settings.choosePrinter'),
+                      onPressed: _choosePrinter,
+                      child: const Text('Choose printer…'),
+                    ),
+                  ],
+                ),
+              ),
+            ]),
             _section(context, 'Backup', [
               _field(
                 'Backup folder',
-                TextField(
-                  key: const Key('settings.backupFolder'),
-                  controller: _folder,
-                  style: numberStyle.copyWith(fontSize: 13),
-                  decoration: const InputDecoration(
-                    hintText: r'D:\LedgerlyBackups or a Google Drive folder',
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        key: const Key('settings.backupFolder'),
+                        controller: _folder,
+                        style: numberStyle.copyWith(fontSize: 13),
+                        decoration: const InputDecoration(
+                          hintText:
+                              r'D:\LedgerlyBackups or a Google Drive folder',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      key: const Key('settings.browseBackupFolder'),
+                      onPressed: _browseFolder,
+                      child: const Text('Browse…'),
+                    ),
+                  ],
+                ),
+              ),
+              _field(
+                'Restore',
+                OutlinedButton(
+                  key: const Key('settings.restore'),
+                  onPressed: _restore,
+                  child: const Text('Restore from backup…'),
                 ),
               ),
               _field(

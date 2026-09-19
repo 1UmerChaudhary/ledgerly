@@ -122,12 +122,14 @@ class BackupService {
 
   /// Copies [backupFile] over the live database file, after checking it is
   /// really a Ledgerly database and after taking a safety copy of whatever
-  /// is there now. Restoring is relaunch-based, never an in-process swap:
-  /// the caller MUST close the open [db] connection before calling this, and
-  /// must prompt the user to restart the app afterwards. Returns the
-  /// pre-restore safety copy, so an accidental restore is itself reversible.
+  /// is there now. The caller MUST close the open [db] connection before
+  /// calling this (SQLite must not have the file open while it is replaced),
+  /// then reopen a fresh connection to the same path afterwards — in this
+  /// app that means invalidating the provider that owns the connection, not
+  /// a full app relaunch. Returns the pre-restore safety copy, so an
+  /// accidental restore is itself reversible.
   Future<File> restoreFrom(File backupFile) async {
-    _validateBackup(backupFile);
+    validateBackup(backupFile);
     await localBackupDir.create(recursive: true);
     final preRestore = File(
       p.join(localBackupDir.path, '$_base-pre-restore-${_format(_now())}.db'),
@@ -139,7 +141,10 @@ class BackupService {
     return preRestore;
   }
 
-  static void _validateBackup(File backupFile) {
+  /// Checked by callers before closing the live connection, so a bad file
+  /// picked by the user is rejected without ever disturbing the open firm.
+  /// An instance method (not static) so a test double can replace it.
+  void validateBackup(File backupFile) {
     if (!backupFile.existsSync()) {
       throw InvalidBackupException('That file does not exist.');
     }
