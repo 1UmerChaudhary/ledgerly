@@ -11,6 +11,7 @@ dependencies:
     path: ../ledgerly_core
   meta: ^1.15.0
   path: ^1.9.0
+  uuid: ^4.6.0
 dev_dependencies:
   test: ^1.25.0
   lints: ^6.0.0

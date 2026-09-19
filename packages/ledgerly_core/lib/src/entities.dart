@@ -87,6 +87,7 @@ class Bill {
     this.overriddenTotalBasis,
     this.description,
     this.version = 1,
+    this.displayNo,
   });
 
   final String id;
@@ -107,6 +108,9 @@ class Bill {
   final String? description;
   final int version;
 
+  /// "A3F9-1044": rendered from the device code and sequence once saved.
+  final String? displayNo;
+
   Money get calculatedTotal => lines.isEmpty
       ? (typedAmount ?? Money.zero)
       : lines.fold(Money.zero, (sum, l) => sum + l.finalTotal);
@@ -124,6 +128,7 @@ class Bill {
     Money? overriddenTotalBasis,
     String? description,
     int? version,
+    String? displayNo,
   }) => Bill(
     id: id,
     customerId: customerId,
@@ -135,5 +140,42 @@ class Bill {
     overriddenTotalBasis: overriddenTotalBasis ?? this.overriddenTotalBasis,
     description: description ?? this.description,
     version: version ?? this.version,
+    displayNo: displayNo ?? this.displayNo,
   );
+}
+
+@immutable
+class Customer {
+  const Customer({
+    required this.id,
+    required this.name,
+    this.phone,
+    this.phoneNormalized,
+    this.notes,
+    this.needsReview = false,
+  });
+
+  final String id;
+  final String name;
+  final String? phone;
+  final String? phoneNormalized;
+  final String? notes;
+  final bool needsReview;
+}
+
+@immutable
+class Item {
+  const Item({
+    required this.id,
+    required this.name,
+    this.defaultBagWeight,
+    this.defaultRateBase,
+    this.defaultUom = Uom.kg,
+  });
+
+  final String id;
+  final String name;
+  final Weight? defaultBagWeight;
+  final Weight? defaultRateBase;
+  final Uom defaultUom;
 }
