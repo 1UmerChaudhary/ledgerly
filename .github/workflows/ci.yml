@@ -29,7 +29,9 @@ jobs:
         working-directory: packages/ledgerly_data
         run: |
           dart run drift_dev schema dump lib/src/db/app_database.dart /tmp/schema_check.json
-          python3 -c "import json,sys; a=json.load(open('/tmp/schema_check.json')); b=json.load(open('drift_schemas/drift_schema_v%d.json' % int(a['_meta']['version']))); sys.exit(0 if a==b else 1)" || (echo "Schema changed without a new export. Run: dart run drift_dev schema dump lib/src/db/app_database.dart drift_schemas/" && exit 1)
+          latest=$(ls drift_schemas/*.json | sort -V | tail -1)
+          python3 -c "import json,sys; sys.exit(0 if json.load(open('/tmp/schema_check.json')) == json.load(open('$latest')) else 1)" \
+            || (echo "Schema changed without a new export. Run: dart run drift_dev schema dump lib/src/db/app_database.dart drift_schemas/" && exit 1)
       - name: App tests (widget tests as Windows)
         working-directory: app
         run: |
