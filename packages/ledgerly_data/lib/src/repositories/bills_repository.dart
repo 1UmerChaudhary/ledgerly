@@ -123,10 +123,16 @@ class BillsRepository {
         )
         .get();
     if (headers.isEmpty) return const [];
-    final ids = headers.map((r) => r.read<String>('id')).toList();
-    final lines = await (db.select(
-      db.transactionLines,
-    )..where((l) => l.transactionId.isIn(ids))).get();
+    // Join instead of `IN (20k ids)`: no parameter-count limit, one index walk.
+    final lines = await db
+        .customSelect(
+          'SELECT l.* FROM transaction_lines l JOIN transactions t ON t.id = l.transaction_id '
+          'WHERE t.firm_id = ? AND t.customer_id = ? AND t.deleted_at IS NULL',
+          variables: [Variable(ctx.firmId), Variable(customerId)],
+          readsFrom: {db.transactionLines, db.transactions},
+        )
+        .map((r) => db.transactionLines.map(r.data))
+        .get();
     final byBill = <String, List<TransactionLineRow>>{};
     for (final l in lines) {
       (byBill[l.transactionId] ??= []).add(l);

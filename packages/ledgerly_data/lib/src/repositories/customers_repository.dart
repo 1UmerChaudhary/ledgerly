@@ -93,6 +93,51 @@ class CustomersRepository {
     return rows.map(_toEntity).toList();
   }
 
+  /// Digits search the phone; anything else is a fuzzy name search, so a clerk
+  /// who types "rashd" or the last digits of a number both land on the customer.
+  Future<List<Customer>> search(String query) async {
+    final live = await all();
+    final digits = query.replaceAll(RegExp(r'\D'), '');
+    if (digits.length >= 4 &&
+        digits.length == query.replaceAll(RegExp(r'[\s\-+]'), '').length) {
+      return live
+          .where((c) => (c.phoneNormalized ?? '').contains(digits))
+          .toList();
+    }
+    final byName = {for (final c in live) c.name: c};
+    return fuzzySearch(
+      query,
+      byName.keys,
+    ).map((h) => byName[h.value]!).toList();
+  }
+
+  /// Close spellings of an existing live customer, shown as a warning before a
+  /// new one is created (phone, when present, is the hard block).
+  Future<List<Customer>> similarNames(
+    String name, {
+    double threshold = 0.8,
+  }) async {
+    final target = normalizeName(name);
+    final live = await all();
+    return live
+        .where((c) => similarity(target, normalizeName(c.name)) >= threshold)
+        .toList();
+  }
+
+  Future<void> softDelete(String id) {
+    return db.transaction(() async {
+      final now = ctx.stamp();
+      await (db.update(db.customers)..where((c) => c.id.equals(id))).write(
+        CustomersCompanion(
+          deletedAt: Value(now),
+          updatedAt: Value(now),
+          updatedByDeviceId: Value(ctx.deviceId),
+        ),
+      );
+      await enqueueOutbox(db, 'customers', id, now);
+    });
+  }
+
   Customer _toEntity(CustomerRow r) => Customer(
     id: r.id,
     name: r.name,
