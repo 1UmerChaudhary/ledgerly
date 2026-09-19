@@ -1,16 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-void main() {
-  runApp(const MainApp());
-}
+import 'app.dart';
+import 'bootstrap/app_paths.dart';
+import 'bootstrap/global_prefs.dart';
+import 'bootstrap/providers.dart';
 
-class MainApp extends StatelessWidget {
-  const MainApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const MaterialApp(
-      home: Scaffold(body: Center(child: Text('Hello World!'))),
-    );
-  }
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Only the two cheap reads happen before the first frame; the database opens
+  // asynchronously behind the shell so the window never sits blank.
+  final prefs = await SharedPrefsGlobalPrefs.load();
+  final paths = await AppPaths.resolve();
+  runApp(
+    ProviderScope(
+      overrides: [
+        globalPrefsProvider.overrideWithValue(prefs),
+        appPathsProvider.overrideWithValue(paths),
+      ],
+      child: const LedgerlyApp(),
+    ),
+  );
 }

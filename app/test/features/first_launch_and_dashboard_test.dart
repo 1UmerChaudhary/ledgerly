@@ -1,0 +1,195 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:ledgerly_core/ledgerly_core.dart';
+import 'package:ledgerly_data/ledgerly_data.dart';
+
+import '../support/pump_app.dart';
+
+void main() {
+  testWidgets(
+    'first launch asks for the firm, Ctrl+Enter creates it and lands on the dashboard',
+    (tester) async {
+      await pumpLedgerly(tester);
+      expect(find.text('Set up your firm'), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const Key('setup.firmName')),
+        'Al-Madina Oil Mills',
+      );
+      await tester.enterText(
+        find.byKey(const Key('setup.contact')),
+        '0300-1234567',
+      );
+      await pressCtrl(tester, LogicalKeyboardKey.enter);
+
+      expect(find.text('Set up your firm'), findsNothing);
+      expect(find.text('Al-Madina Oil Mills'), findsOneWidget); // title bar
+      expect(
+        find.text('No customers yet. Press Ctrl+N to record the first sale.'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'dashboard shows receivables and giveables from real transactions, sorted high to low',
+    (tester) async {
+      await pumpLedgerly(
+        tester,
+        seed: (db, ctx) async {
+          await FirmSetup(
+            db,
+            ctx,
+          ).createFirm(name: 'Al-Madina Oil Mills', contactNumber: '0300');
+          final customers = CustomersRepository(db, ctx);
+          final bills = BillsRepository(db, ctx);
+          final rashid = await customers.create(name: 'Rashid Traders');
+          final ahmed = await customers.create(name: 'Ahmed & Sons');
+          final seedCo = await customers.create(name: 'Sahiwal Seed Co.');
+          Future<void> cash(String cust, TransactionType type, int rupees) =>
+              bills.saveNew(
+                Bill(
+                  id: newId(),
+                  customerId: cust,
+                  type: type,
+                  entryDate: '2026-09-18',
+                  typedAmount: Money.rupees(rupees),
+                ),
+              );
+          await cash(rashid.id, TransactionType.openingBalance, 620000);
+          await cash(ahmed.id, TransactionType.openingBalance, 415500);
+          await cash(
+            seedCo.id,
+            TransactionType.cashIn,
+            280000,
+          ); // advance received → we owe them
+        },
+      );
+
+      final recv = find.byKey(const Key('dashboard.receivables'));
+      final give = find.byKey(const Key('dashboard.giveables'));
+      expect(
+        find.descendant(of: recv, matching: find.text('Rashid Traders')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: recv, matching: find.text('6,20,000')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: recv, matching: find.text('4,15,500')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: give, matching: find.text('Sahiwal Seed Co.')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: give, matching: find.text('2,80,000')),
+        findsOneWidget,
+      );
+      expect(find.text('Rs 10,35,500'), findsOneWidget); // receivable total
+      expect(find.text('Rs 2,80,000'), findsOneWidget); // giveable total
+
+      // Rashid (bigger) is listed before Ahmed.
+      final rashidY = tester.getTopLeft(find.text('Rashid Traders')).dy;
+      final ahmedY = tester.getTopLeft(find.text('Ahmed & Sons')).dy;
+      expect(rashidY, lessThan(ahmedY));
+    },
+  );
+
+  testWidgets(
+    'search is focused on open, filters fuzzily, and Enter opens the ledger',
+    (tester) async {
+      await pumpLedgerly(
+        tester,
+        seed: (db, ctx) async {
+          await FirmSetup(
+            db,
+            ctx,
+          ).createFirm(name: 'Mill', contactNumber: '0300');
+          final customers = CustomersRepository(db, ctx);
+          final bills = BillsRepository(db, ctx);
+          for (final name in [
+            'Rashid Traders',
+            'Ahmed & Sons',
+            'Karim Store',
+          ]) {
+            final c = await customers.create(name: name);
+            await bills.saveNew(
+              Bill(
+                id: newId(),
+                customerId: c.id,
+                type: TransactionType.openingBalance,
+                entryDate: '2026-09-18',
+                typedAmount: Money.rupees(1000),
+              ),
+            );
+          }
+        },
+      );
+
+      expect(
+        tester.binding.focusManager.primaryFocus?.debugLabel,
+        'dashboard.search',
+      );
+      await tester.enterText(
+        find.byKey(const Key('dashboard.search')),
+        'rashd',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Rashid Traders'), findsOneWidget);
+      expect(find.text('Karim Store'), findsNothing);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter, platform: 'windows');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('ledger.screen')), findsOneWidget);
+      expect(find.text('Rashid Traders'), findsWidgets);
+    },
+  );
+
+  testWidgets('arrow keys move the selection and Ctrl+N opens a new sale', (
+    tester,
+  ) async {
+    await pumpLedgerly(
+      tester,
+      seed: (db, ctx) async {
+        await FirmSetup(
+          db,
+          ctx,
+        ).createFirm(name: 'Mill', contactNumber: '0300');
+        final customers = CustomersRepository(db, ctx);
+        final bills = BillsRepository(db, ctx);
+        for (final (name, rupees) in [
+          ('Rashid Traders', 5000),
+          ('Ahmed & Sons', 3000),
+        ]) {
+          final c = await customers.create(name: name);
+          await bills.saveNew(
+            Bill(
+              id: newId(),
+              customerId: c.id,
+              type: TransactionType.openingBalance,
+              entryDate: '2026-09-18',
+              typedAmount: Money.rupees(rupees),
+            ),
+          );
+        }
+      },
+    );
+
+    await tester.sendKeyEvent(
+      LogicalKeyboardKey.arrowDown,
+      platform: 'windows',
+    );
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter, platform: 'windows');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('ledger.screen')), findsOneWidget);
+    expect(find.text('Ahmed & Sons'), findsWidgets);
+
+    await pressCtrl(tester, LogicalKeyboardKey.keyN);
+    expect(find.byKey(const Key('bill.screen')), findsOneWidget);
+  }, variant: windowsOnly);
+}
