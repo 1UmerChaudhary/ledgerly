@@ -5,7 +5,7 @@
   #define AppVersion "0.1.0"
 #endif
 [Setup]
-AppId={{7E2B0E1C-3A5C-4F2E-9B7D-LEDGERLY0001}
+AppId={{1DAA776F-A11A-41D7-ACCC-442F92B7FFAF}
 AppName={#AppName}
 AppVersion={#AppVersion}
 DefaultDirName={autopf}\{#AppName}

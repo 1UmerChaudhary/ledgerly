@@ -23,8 +23,23 @@ jobs:
           Copy-Item "$vc\msvcp140.dll","$vc\vcruntime140.dll","$vc\vcruntime140_1.dll" $out
       - name: Build installer (Inno Setup)
         shell: pwsh
+        env:
+          # A tag push (v0.1.0) names the release; workflow_dispatch (no tag)
+          # falls back to the .iss script's own default.
+          LEDGERLY_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
         run: |
+          $env:LEDGERLY_VERSION = $env:LEDGERLY_VERSION.TrimStart('v')
           choco install innosetup --no-progress -y
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\ledgerly.iss
+      - name: Smoke test — silent install actually places the app
+        shell: pwsh
+        run: |
+          $exe = Get-Item installer\Output\Ledgerly-Setup-*.exe
+          # PrivilegesRequired=lowest means this is always a per-user install;
+          # no /ALLUSERS or /CURRENTUSER choice exists to pass.
+          Start-Process -FilePath $exe.FullName -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -Wait
+          $installed = Get-ChildItem "$env:LOCALAPPDATA\Programs\Ledgerly\ledgerly.exe" -ErrorAction SilentlyContinue
+          if (-not $installed) { throw "Silent install did not produce ledgerly.exe" }
+          Write-Host "Installed to $($installed.FullName)"
       - uses: actions/upload-artifact@v4
         with: { name: ledgerly-windows-installer, path: installer/Output/*.exe }
