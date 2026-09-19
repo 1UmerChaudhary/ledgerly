@@ -4,6 +4,7 @@ import 'package:drift/native.dart';
 import 'package:ledgerly_core/ledgerly_core.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 import 'package:path/path.dart' as p;
+import 'package:sqlite3/sqlite3.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -91,6 +92,54 @@ void main() {
     expect(await s.isDue(), isFalse);
     now = now.add(const Duration(hours: 25));
     expect(await s.isDue(), isTrue);
+  });
+
+  group('restoreFrom', () {
+    test('copies a valid backup over the live file and keeps a pre-restore safety copy', () async {
+      final result = await service().backupNow();
+      await db.close(); // restoreFrom requires the live connection closed first
+
+      final preRestore = await service().restoreFrom(result.localFile);
+      expect(preRestore.existsSync(), isTrue);
+      final restored = AppDatabase(NativeDatabase(dbFile));
+      final rows = await restored
+          .customSelect('SELECT count(*) AS c FROM customers')
+          .getSingle();
+      expect(
+        rows.read<int>('c'),
+        1,
+      ); // Rashid Traders, from the outer setUp seed
+      await restored.close();
+    });
+
+    test('rejects a file that is not a valid SQLite database', () async {
+      await db.close();
+      final junk = File(p.join(tmp.path, 'junk.db'));
+      await junk.writeAsBytes([1, 2, 3, 4]);
+      expect(
+        () => service().restoreFrom(junk),
+        throwsA(isA<InvalidBackupException>()),
+      );
+    });
+
+    test('rejects a valid SQLite file with none of our tables', () async {
+      await db.close();
+      final empty = File(p.join(tmp.path, 'empty.db'));
+      final rawDb = sqlite3.open(empty.path);
+      rawDb.execute('CREATE TABLE unrelated (id INTEGER)');
+      rawDb.close();
+      expect(
+        () => service().restoreFrom(empty),
+        throwsA(isA<InvalidBackupException>()),
+      );
+    });
+
+    test('rejects a file that does not exist', () {
+      expect(
+        () => service().restoreFrom(File(p.join(tmp.path, 'nope.db'))),
+        throwsA(isA<InvalidBackupException>()),
+      );
+    });
   });
 
   test('a missing user folder is reported, not fatal', () async {

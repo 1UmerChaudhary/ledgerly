@@ -7,8 +7,15 @@ abstract class GlobalPrefs {
   String get deviceId;
   String? get lastFirmId;
   String? get backupFolder;
+
+  /// The saved default printer for silent printing. Matched by name first;
+  /// [printerUrl] is kept alongside because a USB printer's URL can change
+  /// when it is unplugged and reconnected, while its name usually does not.
+  String? get printerName;
+  String? get printerUrl;
   Future<void> setLastFirmId(String? id);
   Future<void> setBackupFolder(String? path);
+  Future<void> setPrinter({String? name, String? url});
 }
 
 class SharedPrefsGlobalPrefs implements GlobalPrefs {
@@ -31,6 +38,10 @@ class SharedPrefsGlobalPrefs implements GlobalPrefs {
   @override
   String? get backupFolder => _prefs.getString('backup_folder');
   @override
+  String? get printerName => _prefs.getString('printer_name');
+  @override
+  String? get printerUrl => _prefs.getString('printer_url');
+  @override
   Future<void> setLastFirmId(String? id) => id == null
       ? _prefs.remove('last_firm_id')
       : _prefs.setString('last_firm_id', id);
@@ -38,6 +49,19 @@ class SharedPrefsGlobalPrefs implements GlobalPrefs {
   Future<void> setBackupFolder(String? path) => path == null
       ? _prefs.remove('backup_folder')
       : _prefs.setString('backup_folder', path);
+  @override
+  Future<void> setPrinter({String? name, String? url}) async {
+    if (name == null) {
+      await _prefs.remove('printer_name');
+    } else {
+      await _prefs.setString('printer_name', name);
+    }
+    if (url == null) {
+      await _prefs.remove('printer_url');
+    } else {
+      await _prefs.setString('printer_url', url);
+    }
+  }
 }
 
 class InMemoryGlobalPrefs implements GlobalPrefs {
@@ -50,7 +74,16 @@ class InMemoryGlobalPrefs implements GlobalPrefs {
   @override
   String? backupFolder;
   @override
+  String? printerName;
+  @override
+  String? printerUrl;
+  @override
   Future<void> setLastFirmId(String? id) async => lastFirmId = id;
   @override
   Future<void> setBackupFolder(String? path) async => backupFolder = path;
+  @override
+  Future<void> setPrinter({String? name, String? url}) async {
+    printerName = name;
+    printerUrl = url;
+  }
 }

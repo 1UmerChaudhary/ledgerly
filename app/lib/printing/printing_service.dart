@@ -4,6 +4,30 @@ import 'dart:typed_data';
 import 'package:file_selector/file_selector.dart';
 import 'package:printing/printing.dart';
 
+import '../bootstrap/global_prefs.dart';
+
+/// A printer as far as this app cares: enough to find it again.
+class PrinterInfo {
+  const PrinterInfo({required this.name, required this.url});
+  final String name;
+  final String url;
+}
+
+/// Lists the printers this machine knows about. A separate seam from
+/// [PrintingService] because listing is read-only and needed just for the
+/// Settings picker, while [PrintingService] is the one that actually prints.
+abstract class PrinterDiscovery {
+  Future<List<PrinterInfo>> list();
+}
+
+class RealPrinterDiscovery implements PrinterDiscovery {
+  @override
+  Future<List<PrinterInfo>> list() async {
+    final printers = await Printing.listPrinters();
+    return [for (final p in printers) PrinterInfo(name: p.name, url: p.url)];
+  }
+}
+
 /// The one seam between our print logic and the operating system: sending a
 /// PDF to a printer, or saving PDF/PNG bytes somewhere the user chooses.
 /// Tests replace this with a fake that only records calls — real OS printing
@@ -22,9 +46,26 @@ abstract class PrintingService {
 }
 
 class RealPrintingService implements PrintingService {
+  RealPrintingService(this.prefs);
+  final GlobalPrefs prefs;
+
+  /// Silent to the saved default printer once one is chosen in Settings; a
+  /// print dialog every time until then. Matches every other choice in this
+  /// app that degrades to "ask" rather than fail when nothing is configured.
   @override
-  Future<void> print(Uint8List pdfBytes, {required String jobName}) =>
-      Printing.layoutPdf(onLayout: (_) async => pdfBytes, name: jobName);
+  Future<void> print(Uint8List pdfBytes, {required String jobName}) async {
+    final name = prefs.printerName;
+    final url = prefs.printerUrl;
+    if (name != null && url != null) {
+      await Printing.directPrintPdf(
+        printer: Printer(url: url, name: name),
+        onLayout: (_) async => pdfBytes,
+        name: jobName,
+      );
+      return;
+    }
+    await Printing.layoutPdf(onLayout: (_) async => pdfBytes, name: jobName);
+  }
 
   @override
   Future<bool> exportPdf(Uint8List pdfBytes, {required String suggestedName}) =>

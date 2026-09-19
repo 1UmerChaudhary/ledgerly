@@ -5,6 +5,15 @@ import 'package:sqlite3/sqlite3.dart' as raw;
 
 import 'db/app_database.dart';
 
+/// A backup file failed validation before it was ever allowed to overwrite
+/// anything — never silently proceed with a corrupt or unrelated file.
+class InvalidBackupException implements Exception {
+  InvalidBackupException(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
+
 class BackupResult {
   const BackupResult({
     required this.localFile,
@@ -108,6 +117,61 @@ class BackupService {
       ..sort((a, b) => p.basename(b.path).compareTo(p.basename(a.path)));
     for (final old in files.skip(keep)) {
       old.deleteSync();
+    }
+  }
+
+  /// Copies [backupFile] over the live database file, after checking it is
+  /// really a Ledgerly database and after taking a safety copy of whatever
+  /// is there now. Restoring is relaunch-based, never an in-process swap:
+  /// the caller MUST close the open [db] connection before calling this, and
+  /// must prompt the user to restart the app afterwards. Returns the
+  /// pre-restore safety copy, so an accidental restore is itself reversible.
+  Future<File> restoreFrom(File backupFile) async {
+    _validateBackup(backupFile);
+    await localBackupDir.create(recursive: true);
+    final preRestore = File(
+      p.join(localBackupDir.path, '$_base-pre-restore-${_format(_now())}.db'),
+    );
+    if (databaseFile.existsSync()) {
+      await databaseFile.copy(preRestore.path);
+    }
+    await backupFile.copy(databaseFile.path);
+    return preRestore;
+  }
+
+  static void _validateBackup(File backupFile) {
+    if (!backupFile.existsSync()) {
+      throw InvalidBackupException('That file does not exist.');
+    }
+    // sqlite3.open() succeeds even on a non-database file — it only notices
+    // once it actually reads the file, e.g. on the first query below.
+    final raw.Database probe;
+    try {
+      probe = raw.sqlite3.open(backupFile.path, mode: raw.OpenMode.readOnly);
+    } on Exception {
+      throw InvalidBackupException('That is not a valid database file.');
+    }
+    try {
+      String check;
+      try {
+        check = probe.select('PRAGMA quick_check').first.values.first as String;
+      } on raw.SqliteException {
+        throw InvalidBackupException('That is not a valid database file.');
+      }
+      if (check != 'ok') {
+        throw InvalidBackupException('That backup file is corrupted.');
+      }
+      try {
+        final firms =
+            probe.select('SELECT count(*) AS c FROM firms').first['c'] as int;
+        if (firms == 0) {
+          throw InvalidBackupException('That file has no firm in it.');
+        }
+      } on raw.SqliteException {
+        throw InvalidBackupException('That file is not a Ledgerly backup.');
+      }
+    } finally {
+      probe.close();
     }
   }
 

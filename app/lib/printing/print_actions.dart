@@ -5,7 +5,11 @@ import '../bootstrap/providers.dart';
 import 'printing_service.dart';
 
 final printingServiceProvider = Provider<PrintingService>(
-  (ref) => RealPrintingService(),
+  (ref) => RealPrintingService(ref.watch(globalPrefsProvider)),
+);
+
+final printerDiscoveryProvider = Provider<PrinterDiscovery>(
+  (ref) => RealPrinterDiscovery(),
 );
 
 /// Builds the slip, sends it to the printer, and logs the print — the one
