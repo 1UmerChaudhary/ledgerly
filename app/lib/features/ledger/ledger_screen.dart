@@ -52,8 +52,11 @@ String shortDate(String iso) {
 /// bill with its history. Debit = what the customer owes more (sale, cash paid
 /// to them, opening balance), Credit = owes less (purchase, cash received).
 class LedgerScreen extends ConsumerStatefulWidget {
-  const LedgerScreen({super.key, required this.customerId});
+  const LedgerScreen({super.key, required this.customerId, this.selectBillId});
   final String customerId;
+
+  /// Preselect this bill (the one just saved) until the user moves.
+  final String? selectBillId;
 
   @override
   ConsumerState<LedgerScreen> createState() => _LedgerScreenState();
@@ -61,7 +64,7 @@ class LedgerScreen extends ConsumerStatefulWidget {
 
 class _LedgerScreenState extends ConsumerState<LedgerScreen> {
   final _focus = FocusNode(debugLabel: 'ledger');
-  int _selected = 0;
+  int? _selected; // null = not moved yet → follow selectBillId, else 0
   int? _selectedHistoryVersion;
 
   @override
@@ -116,6 +119,14 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
     setState(() => _selectedHistoryVersion = null);
   }
 
+  int _effective(List<LedgerEntry> entries) {
+    if (_selected != null) return _selected!.clamp(0, entries.length - 1);
+    final i = widget.selectBillId == null
+        ? -1
+        : entries.indexWhere((e) => e.bill.id == widget.selectBillId);
+    return i < 0 ? 0 : i;
+  }
+
   KeyEventResult _onKey(
     FocusNode node,
     KeyEvent event,
@@ -125,17 +136,18 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
       return KeyEventResult.ignored;
     }
     final k = event.logicalKey;
-    final entry = entries[_selected.clamp(0, entries.length - 1)];
+    final current = _effective(entries);
+    final entry = entries[current];
     if (k == LogicalKeyboardKey.arrowDown) {
       setState(() {
-        _selected = (_selected + 1).clamp(0, entries.length - 1);
+        _selected = (current + 1).clamp(0, entries.length - 1);
         _selectedHistoryVersion = null;
       });
       return KeyEventResult.handled;
     }
     if (k == LogicalKeyboardKey.arrowUp) {
       setState(() {
-        _selected = (_selected - 1).clamp(0, entries.length - 1);
+        _selected = (current - 1).clamp(0, entries.length - 1);
         _selectedHistoryVersion = null;
       });
       return KeyEventResult.handled;
@@ -165,9 +177,8 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
     final items = ref.watch(itemsListProvider).value ?? const <Item>[];
     final itemNames = {for (final i in items) i.id: i.name};
     final balance = entries.isEmpty ? Money.zero : entries.last.runningBalance;
-    final selected = entries.isEmpty
-        ? null
-        : entries[_selected.clamp(0, entries.length - 1)];
+    final selectedIndex = entries.isEmpty ? 0 : _effective(entries);
+    final selected = entries.isEmpty ? null : entries[selectedIndex];
 
     return Focus(
       focusNode: _focus,
@@ -250,7 +261,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                   Expanded(
                     child: _LedgerTable(
                       entries: entries,
-                      selected: _selected,
+                      selected: selectedIndex,
                       onTap: (i) => setState(() => _selected = i),
                     ),
                   ),

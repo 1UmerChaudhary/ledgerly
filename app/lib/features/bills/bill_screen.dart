@@ -35,8 +35,11 @@ String _owesPhrase(Money balance) => balance.isNegative
 /// One screen for every transaction type. Sales and purchases show the lines
 /// grid; cash, opening balance and adjustment show a single amount.
 class BillScreen extends ConsumerStatefulWidget {
-  const BillScreen({super.key, required this.type});
+  const BillScreen({super.key, required this.type, this.editBillId});
   final String type;
+
+  /// When set, the form edits this stored bill and saving writes a new version.
+  final String? editBillId;
 
   @override
   ConsumerState<BillScreen> createState() => _BillScreenState();
@@ -44,6 +47,18 @@ class BillScreen extends ConsumerStatefulWidget {
 
 class _BillScreenState extends ConsumerState<BillScreen> {
   late final TransactionType _type = _typeFrom(widget.type);
+  late final BillFormKey _key = (type: _type, editId: widget.editBillId);
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.editBillId case final id?) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _ctl.loadExisting(id),
+      );
+    }
+  }
+
   final _lineFocus = <String, FocusNode>{};
   final _customerFocus = FocusNode(debugLabel: 'bill.customer');
   // Holds focus once the form is gone (Saved state) so Esc/Ctrl+N still reach
@@ -63,7 +78,7 @@ class _BillScreenState extends ConsumerState<BillScreen> {
     super.dispose();
   }
 
-  BillDraftController get _ctl => ref.read(billDraftProvider(_type).notifier);
+  BillDraftController get _ctl => ref.read(billDraftProvider(_key).notifier);
 
   Future<void> _save() async {
     final firm = ref.read(openFirmProvider).value;
@@ -74,7 +89,7 @@ class _BillScreenState extends ConsumerState<BillScreen> {
 
   Future<void> _escape(BillDraft d) async {
     if (d.saved != null) {
-      context.go('/customers/${d.saved!.customerId}');
+      context.go('/customers/${d.saved!.customerId}?select=${d.saved!.id}');
       return;
     }
     if (!d.dirty) {
@@ -122,7 +137,7 @@ class _BillScreenState extends ConsumerState<BillScreen> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final d = ref.watch(billDraftProvider(_type));
+    final d = ref.watch(billDraftProvider(_key));
     final customers =
         ref.watch(customersListProvider).value ?? const <Customer>[];
     final items = ref.watch(itemsListProvider).value ?? const <Item>[];
@@ -163,7 +178,9 @@ class _BillScreenState extends ConsumerState<BillScreen> {
                 Row(
                   children: [
                     Text(
-                      _title(_type),
+                      d.editing == null
+                          ? _title(_type)
+                          : _title(_type).replaceFirst('NEW ', 'EDIT '),
                       style: TextStyle(
                         fontSize: 11,
                         letterSpacing: 1,

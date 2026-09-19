@@ -47,13 +47,22 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/', builder: (_, _) => const DashboardScreen()),
           GoRoute(
             path: '/customers/:id',
-            builder: (_, s) =>
-                LedgerScreen(customerId: s.pathParameters['id']!),
+            builder: (_, s) => LedgerScreen(
+              customerId: s.pathParameters['id']!,
+              selectBillId: s.uri.queryParameters['select'],
+            ),
           ),
           GoRoute(
             path: '/bills/new',
             builder: (_, s) =>
                 BillScreen(type: s.uri.queryParameters['type'] ?? 'sale'),
+          ),
+          GoRoute(
+            path: '/bills/:id/edit',
+            builder: (_, s) => BillScreen(
+              type: s.uri.queryParameters['type'] ?? 'sale',
+              editBillId: s.pathParameters['id'],
+            ),
           ),
         ],
       ),

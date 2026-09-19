@@ -4,6 +4,7 @@ import 'package:ledgerly_data/ledgerly_data.dart';
 
 import '../../bootstrap/providers.dart';
 import '../dashboard/dashboard_screen.dart';
+import '../ledger/ledger_screen.dart';
 
 /// What the clerk has typed into one grid row. Text stays text until it is
 /// parsed, so a half-typed number never throws; totals appear once valid.
@@ -112,6 +113,7 @@ class BillDraft {
     this.saved,
     this.error,
     this.dirty = false,
+    this.editing,
   });
 
   final TransactionType type;
@@ -124,6 +126,9 @@ class BillDraft {
   final Bill? saved;
   final String? error;
   final bool dirty;
+
+  /// The stored bill this draft edits; null when creating a new one.
+  final Bill? editing;
 
   bool get hasLines =>
       type == TransactionType.sale || type == TransactionType.purchase;
@@ -161,8 +166,10 @@ class BillDraft {
     String? error,
     bool clearError = false,
     bool? dirty,
+    Bill? editing,
   }) => BillDraft(
     type: type,
+    editing: editing ?? this.editing,
     customer: clearCustomer ? null : (customer ?? this.customer),
     entryDate: entryDate ?? this.entryDate,
     description: description ?? this.description,
@@ -180,9 +187,12 @@ String todayIso() {
   return '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
 }
 
+typedef BillFormKey = ({TransactionType type, String? editId});
+
 class BillDraftController extends Notifier<BillDraft> {
-  BillDraftController(this.type);
-  final TransactionType type;
+  BillDraftController(this.key);
+  final BillFormKey key;
+  TransactionType get type => key.type;
 
   @override
   BillDraft build() => BillDraft(
@@ -192,6 +202,52 @@ class BillDraftController extends Notifier<BillDraft> {
         ? [LineDraft(id: newId())]
         : const [],
   );
+
+  /// Fill the draft from a stored bill so the clerk edits what they see.
+  /// Line ids are kept, which is what lets the history diff match lines.
+  Future<void> loadExisting(String billId) async {
+    final firm = ref.read(openFirmProvider).value;
+    if (firm == null) return;
+    final bill = await firm.bills.byId(billId);
+    if (bill == null) return;
+    final customer = bill.customerId == null
+        ? null
+        : await firm.customers.byId(bill.customerId!);
+    final items = {for (final i in await firm.items.all()) i.id: i};
+    state = BillDraft(
+      type: bill.type,
+      editing: bill,
+      customer: customer,
+      entryDate: bill.entryDate,
+      description: bill.description ?? '',
+      amountText: bill.lines.isEmpty
+          ? formatMoney(bill.finalAmount, symbol: false)
+          : '',
+      overrideText: bill.overriddenTotal == null
+          ? ''
+          : formatMoney(bill.overriddenTotal!, symbol: false),
+      lines: [
+        for (final l in bill.lines)
+          LineDraft(
+            id: l.id,
+            item: items[l.itemId],
+            mode: l.saleMode,
+            bags: l.bagCount?.toString() ?? '',
+            bagKg: l.bagWeight == null ? '' : formatKg(l.bagWeight!),
+            totalKg: l.saleMode == SaleMode.byWeight && l.totalWeight != null
+                ? formatKg(l.totalWeight!)
+                : '',
+            rate: formatMoney(l.rate, symbol: false),
+            base: l.rateBase == null ? '' : formatKg(l.rateBase!, trim: true),
+            override: l.overriddenTotal == null
+                ? ''
+                : formatMoney(l.overriddenTotal!, symbol: false),
+            bagKgTouched: true,
+            baseTouched: true,
+          ),
+      ],
+    );
+  }
 
   void setCustomer(Customer? c) => state = state.copyWith(
     customer: c,
@@ -288,8 +344,11 @@ class BillDraftController extends Notifier<BillDraft> {
       return null;
     }
     final override = d.hasLines ? parseMoney(d.overrideText) : null;
+    final editing = d.editing;
     final bill = Bill(
-      id: newId(),
+      id: editing?.id ?? newId(),
+      version: editing?.version ?? 1,
+      displayNo: editing?.displayNo,
       customerId: d.customer!.id,
       type: d.type,
       entryDate: d.entryDate,
@@ -299,10 +358,14 @@ class BillDraftController extends Notifier<BillDraft> {
       overriddenTotal: override,
       overriddenTotalBasis: override == null ? null : d.calculatedTotal,
     );
-    final saved = await firm.bills.saveNew(bill);
+    final saved = editing == null
+        ? await firm.bills.saveNew(bill)
+        : await firm.bills.edit(bill);
     state = d.copyWith(saved: saved, dirty: false, clearError: true);
     ref.invalidate(dashboardRowsProvider);
     ref.invalidate(customerBalanceProvider(d.customer!.id));
+    ref.invalidate(ledgerEntriesProvider(d.customer!.id));
+    if (editing != null) ref.invalidate(billHistoryProvider(editing.id));
     return saved;
   }
 
@@ -314,7 +377,7 @@ class BillDraftController extends Notifier<BillDraft> {
 }
 
 final billDraftProvider = NotifierProvider.autoDispose
-    .family<BillDraftController, BillDraft, TransactionType>(
+    .family<BillDraftController, BillDraft, BillFormKey>(
       BillDraftController.new,
     );
 
