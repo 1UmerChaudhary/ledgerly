@@ -1,0 +1,11 @@
+name: ledgerly_core
+description: Pure Dart domain for Ledgerly. Money and weight types, balance and rate math, hybrid logical clock, name and phone normalisation, repository interfaces. No Flutter, no database.
+publish_to: none
+resolution: workspace
+environment:
+  sdk: ^3.6.0
+dependencies:
+  meta: ^1.15.0
+dev_dependencies:
+  test: ^1.25.0
+  lints: ^5.0.0
