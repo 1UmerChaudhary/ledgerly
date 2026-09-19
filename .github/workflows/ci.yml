@@ -23,5 +23,6 @@ jobs:
       - name: Migration schema exports are current
         working-directory: app
         run: |
+          if [ ! -d drift_schemas ]; then echo "no drift schema yet (pre-M2)"; exit 0; fi
           dart run drift_dev schema dump lib/data/db/app_database.dart /tmp/schema_check
           diff -r /tmp/schema_check drift_schemas || (echo "Schema changed without an export. Run: dart run drift_dev schema dump ..." && exit 1)
