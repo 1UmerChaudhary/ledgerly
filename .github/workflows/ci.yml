@@ -19,7 +19,9 @@ jobs:
         run: dart test --reporter expanded
       - name: App tests (drift on real SQLite, widget tests as Windows)
         working-directory: app
-        run: flutter test --reporter expanded
+        run: |
+          if [ ! -d test ]; then echo "no app tests yet (pre-M2)"; exit 0; fi
+          flutter test --reporter expanded
       - name: Migration schema exports are current
         working-directory: app
         run: |
