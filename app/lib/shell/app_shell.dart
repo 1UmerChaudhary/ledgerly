@@ -14,6 +14,21 @@ class KeyHint {
 }
 
 List<KeyHint> hintsFor(String location) {
+  if (location == '/customers' || location == '/items') {
+    return const [
+      KeyHint('↑↓', 'move'),
+      KeyHint('Enter', 'open'),
+      KeyHint('Ctrl+N', 'new'),
+      KeyHint('Esc', 'dashboard'),
+    ];
+  }
+  if (location == '/customers/new' || location == '/items/new') {
+    return const [
+      KeyHint('Tab', 'next field'),
+      KeyHint('Ctrl+Enter', 'save'),
+      KeyHint('Esc', 'back'),
+    ];
+  }
   if (location.startsWith('/customers/')) {
     return const [
       KeyHint('↑↓', 'move'),
@@ -148,8 +163,8 @@ class _Rail extends StatelessWidget {
     final l10n = L10n.of(context);
     final entries = [
       ('D', l10n.navDashboard, '/'),
-      ('C', l10n.navCustomers, '/'),
-      ('I', l10n.navItems, '/'),
+      ('C', l10n.navCustomers, '/customers'),
+      ('I', l10n.navItems, '/items'),
       ('S', l10n.navCashSales, '/'),
       (',', l10n.navSettings, '/'),
     ];

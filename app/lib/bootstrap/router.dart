@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/bills/bill_screen.dart';
+import '../features/customers/customer_form_screen.dart';
+import '../features/customers/customers_screen.dart';
+import '../features/items/items_screen.dart';
 import '../features/dashboard/dashboard_screen.dart';
 import '../features/ledger/ledger_screen.dart';
 import '../features/setup/first_launch_screen.dart';
@@ -45,6 +48,19 @@ final routerProvider = Provider<GoRouter>((ref) {
             AppShell(hints: hintsFor(state.matchedLocation), child: child),
         routes: [
           GoRoute(path: '/', builder: (_, _) => const DashboardScreen()),
+          GoRoute(
+            path: '/customers',
+            builder: (_, _) => const CustomersScreen(),
+          ),
+          GoRoute(
+            path: '/customers/new',
+            builder: (_, _) => const CustomerFormScreen(),
+          ),
+          GoRoute(path: '/items', builder: (_, _) => const ItemsScreen()),
+          GoRoute(
+            path: '/items/new',
+            builder: (_, _) => const ItemFormScreen(),
+          ),
           GoRoute(
             path: '/customers/:id',
             builder: (_, s) => LedgerScreen(
