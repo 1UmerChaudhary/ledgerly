@@ -17,6 +17,8 @@ coverage/
 # Python (backend, phase 2)
 __pycache__/
 .venv/
+.pytest_cache/
+*.egg-info/
 
 # OS
 .DS_Store
