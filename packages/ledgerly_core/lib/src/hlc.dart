@@ -5,9 +5,11 @@
 /// back must not produce stamps that lose to its own earlier edits. Ordering
 /// between devices still comes from the server's sequence numbers, not from this.
 class Hlc {
-  Hlc({required int Function() nowMs, this.offsetMs = 0, int last = 0})
-    : _nowMs = nowMs,
-      _last = last;
+  /// [seed] is the newest stamp already in the database, so a restored or
+  /// restarted device never issues a stamp below one it has stored.
+  Hlc({required int Function() clock, this.offsetMs = 0, int seed = 0})
+    : _nowMs = clock,
+      _last = seed;
 
   final int Function() _nowMs;
 
