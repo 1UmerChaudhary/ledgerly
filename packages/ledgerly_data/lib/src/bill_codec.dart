@@ -30,6 +30,7 @@ abstract final class BillCodec {
         lines: ([...lines]..sort((a, b) => a.lineNo.compareTo(b.lineNo)))
             .map(lineFromRow)
             .toList(),
+        deleted: h.deletedAt != null,
       );
 
   static BillLine lineFromRow(TransactionLineRow r) => BillLine(

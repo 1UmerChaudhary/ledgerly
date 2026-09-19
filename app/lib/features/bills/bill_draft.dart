@@ -364,7 +364,15 @@ class BillDraftController extends Notifier<BillDraft> {
     state = d.copyWith(saved: saved, dirty: false, clearError: true);
     ref.invalidate(dashboardRowsProvider);
     ref.invalidate(customerBalanceProvider(d.customer!.id));
-    ref.invalidate(ledgerEntriesProvider(d.customer!.id));
+    ref.invalidate(
+      ledgerEntriesProvider((
+        customerId: d.customer!.id,
+        includeDeleted: false,
+      )),
+    );
+    ref.invalidate(
+      ledgerEntriesProvider((customerId: d.customer!.id, includeDeleted: true)),
+    );
     if (editing != null) ref.invalidate(billHistoryProvider(editing.id));
     return saved;
   }

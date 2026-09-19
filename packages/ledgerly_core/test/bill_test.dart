@@ -95,6 +95,18 @@ void main() {
       expect(edited.finalAmount, Money.rupees(197000)); // kept, but flagged
     });
 
+    test('deleted defaults to false and copyWith can flip it', () {
+      final b = Bill(
+        id: 'b3',
+        customerId: 'c1',
+        type: TransactionType.sale,
+        entryDate: '2026-09-18',
+        typedAmount: Money.rupees(1),
+      );
+      expect(b.deleted, isFalse);
+      expect(b.copyWith(deleted: true).deleted, isTrue);
+    });
+
     test('a cash entry has no lines and its amount is typed directly', () {
       final cash = Bill(
         id: 'b2',

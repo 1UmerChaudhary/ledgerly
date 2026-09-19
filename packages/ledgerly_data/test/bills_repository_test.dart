@@ -174,7 +174,7 @@ void main() {
           TransactionType.sale,
           TransactionType.cashIn,
         ]);
-        expect(ledger.map((e) => e.runningBalance.paisa), [
+        expect(ledger.map((e) => e.runningBalance!.paisa), [
           5000000,
           5000000 + 19716215,
           5000000 + 19716215 - 10000000,
@@ -332,5 +332,103 @@ void main() {
         expect(history.first.changedAt, greaterThan(history.last.changedAt));
       },
     );
+  });
+
+  group('show-deleted and undelete', () {
+    test('ledgerFor(includeDeleted: true) also returns deleted bills, with a null running balance', () async {
+      final live = await bills.saveNew(sale());
+      clock += 5;
+      final gone = await bills.saveNew(sale());
+      await bills.delete(gone.id);
+
+      final plain = await bills.ledgerFor(rashid);
+      expect(plain.map((e) => e.bill.id), [live.id]);
+
+      final withDeleted = await bills.ledgerFor(rashid, includeDeleted: true);
+      expect(withDeleted.map((e) => e.bill.id), [live.id, gone.id]);
+      expect(withDeleted.last.bill.deleted, isTrue);
+      expect(withDeleted.last.runningBalance, isNull);
+      expect(withDeleted.first.runningBalance, isNotNull);
+    });
+
+    test('restoreVersion brings a deleted bill back', () async {
+      final saved = await bills.saveNew(sale());
+      clock += 5;
+      await bills.delete(saved.id);
+      expect(await bills.ledgerFor(rashid), isEmpty);
+
+      clock += 5;
+      final restored = await bills.restoreVersion(
+        saved.id,
+        version: saved.version,
+      );
+      expect(restored.deleted, isFalse);
+      final ledger = await bills.ledgerFor(rashid);
+      expect(ledger.map((e) => e.bill.id), [saved.id]);
+    });
+  });
+
+  group('walk-in sales', () {
+    test('walkInSales lists sales with no customer, excludes ledger sales and deleted rows', () async {
+      await bills.saveNew(sale()); // has a customer, not a walk-in
+      final w1 = await bills.saveNew(
+        Bill(
+          id: newId(),
+          customerId: null,
+          type: TransactionType.sale,
+          entryDate: '2026-09-18',
+          lines: [oilLine()],
+        ),
+      );
+      clock += 5;
+      final w2 = await bills.saveNew(
+        Bill(
+          id: newId(),
+          customerId: null,
+          type: TransactionType.sale,
+          entryDate: '2026-09-19',
+          lines: [cakeLine()],
+        ),
+      );
+      final w3 = await bills.saveNew(
+        Bill(
+          id: newId(),
+          customerId: null,
+          type: TransactionType.sale,
+          entryDate: '2026-09-19',
+          lines: [oilLine()],
+        ),
+      );
+      await bills.delete(w3.id);
+
+      final walkIns = await bills.walkInSales();
+      expect(walkIns.map((b) => b.id), [w1.id, w2.id]);
+    });
+
+    test('walkInSales can filter by an entry_date range', () async {
+      await bills.saveNew(
+        Bill(
+          id: newId(),
+          customerId: null,
+          type: TransactionType.sale,
+          entryDate: '2026-09-10',
+          lines: [oilLine()],
+        ),
+      );
+      final inRange = await bills.saveNew(
+        Bill(
+          id: newId(),
+          customerId: null,
+          type: TransactionType.sale,
+          entryDate: '2026-09-18',
+          lines: [oilLine()],
+        ),
+      );
+      final walkIns = await bills.walkInSales(
+        fromDate: '2026-09-15',
+        toDate: '2026-09-20',
+      );
+      expect(walkIns.map((b) => b.id), [inRange.id]);
+    });
   });
 }

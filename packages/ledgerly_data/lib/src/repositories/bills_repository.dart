@@ -10,7 +10,10 @@ import '../outbox.dart';
 class LedgerEntry {
   const LedgerEntry(this.bill, this.runningBalance);
   final Bill bill;
-  final Money runningBalance;
+
+  /// Null for a deleted bill shown via `includeDeleted`: a deleted row never
+  /// moves the running total, so it has no meaningful balance of its own.
+  final Money? runningBalance;
 }
 
 class HistoryEntry {
@@ -129,7 +132,13 @@ class BillsRepository {
     return BillCodec.fromRows(h, lines);
   }
 
-  Future<List<LedgerEntry>> ledgerFor(String customerId) async {
+  /// [includeDeleted] additionally returns soft-deleted bills, interleaved by
+  /// date, with a null [LedgerEntry.runningBalance] — a "show deleted" toggle
+  /// reveals them without them ever moving the real running total.
+  Future<List<LedgerEntry>> ledgerFor(
+    String customerId, {
+    bool includeDeleted = false,
+  }) async {
     final headers = await db
         .customSelect(
           'SELECT t.*, SUM(signed_amount) OVER (ORDER BY entry_date, created_at, id) AS running '
@@ -139,31 +148,67 @@ class BillsRepository {
           readsFrom: {db.transactions},
         )
         .get();
-    if (headers.isEmpty) return const [];
-    // Join instead of `IN (20k ids)`: no parameter-count limit, one index walk.
-    final lines = await db
-        .customSelect(
-          'SELECT l.* FROM transaction_lines l JOIN transactions t ON t.id = l.transaction_id '
-          'WHERE t.firm_id = ? AND t.customer_id = ? AND t.deleted_at IS NULL',
-          variables: [Variable(ctx.firmId), Variable(customerId)],
-          readsFrom: {db.transactionLines, db.transactions},
-        )
-        .map((r) => db.transactionLines.map(r.data))
-        .get();
+    final deletedHeaders = includeDeleted
+        ? await db
+              .customSelect(
+                'SELECT * FROM transactions '
+                'WHERE firm_id = ? AND customer_id = ? AND deleted_at IS NOT NULL '
+                'ORDER BY entry_date, created_at, id',
+                variables: [Variable(ctx.firmId), Variable(customerId)],
+                readsFrom: {db.transactions},
+              )
+              .get()
+        : const <QueryRow>[];
+    if (headers.isEmpty && deletedHeaders.isEmpty) return const [];
+
+    final ids = [
+      for (final r in headers) r.read<String>('id'),
+      for (final r in deletedHeaders) r.read<String>('id'),
+    ];
+    final lines = await (db.select(
+      db.transactionLines,
+    )..where((l) => l.transactionId.isIn(ids))).get();
     final byBill = <String, List<TransactionLineRow>>{};
     for (final l in lines) {
       (byBill[l.transactionId] ??= []).add(l);
     }
-    return [
-      for (final r in headers)
-        LedgerEntry(
-          BillCodec.fromRows(
-            db.transactions.map(r.data),
-            byBill[r.read<String>('id')] ?? const [],
-          ),
-          Money(r.read<int>('running')),
-        ),
-    ];
+
+    final entries =
+        <(String entryDate, int createdAt, String id, LedgerEntry entry)>[
+          for (final r in headers)
+            (
+              r.read<String>('entry_date'),
+              r.read<int>('created_at'),
+              r.read<String>('id'),
+              LedgerEntry(
+                BillCodec.fromRows(
+                  db.transactions.map(r.data),
+                  byBill[r.read<String>('id')] ?? const [],
+                ),
+                Money(r.read<int>('running')),
+              ),
+            ),
+          for (final r in deletedHeaders)
+            (
+              r.read<String>('entry_date'),
+              r.read<int>('created_at'),
+              r.read<String>('id'),
+              LedgerEntry(
+                BillCodec.fromRows(
+                  db.transactions.map(r.data),
+                  byBill[r.read<String>('id')] ?? const [],
+                ),
+                null,
+              ),
+            ),
+        ]..sort((a, b) {
+          final byDate = a.$1.compareTo(b.$1);
+          if (byDate != 0) return byDate;
+          final byCreated = a.$2.compareTo(b.$2);
+          if (byCreated != 0) return byCreated;
+          return a.$3.compareTo(b.$3);
+        });
+    return [for (final e in entries) e.$4];
   }
 
   /// Prior versions of a bill, newest first. Each snapshot is the bill as it
@@ -186,6 +231,41 @@ class BillsRepository {
           changedByDeviceId: r.changedByDeviceId,
           bill: BillCodec.fromSnapshot(r.snapshot),
         ),
+    ];
+  }
+
+  /// Counter sales with no customer — never appear in any ledger. Uses
+  /// idx_txn_walkin (firm_id, entry_date WHERE customer_id IS NULL).
+  Future<List<Bill>> walkInSales({String? fromDate, String? toDate}) async {
+    final query = db.select(db.transactions)
+      ..where(
+        (t) =>
+            t.firmId.equals(ctx.firmId) &
+            t.customerId.isNull() &
+            t.deletedAt.isNull(),
+      )
+      ..orderBy([
+        (t) => OrderingTerm.asc(t.entryDate),
+        (t) => OrderingTerm.asc(t.createdAt),
+      ]);
+    if (fromDate != null) {
+      query.where((t) => t.entryDate.isBiggerOrEqualValue(fromDate));
+    }
+    if (toDate != null) {
+      query.where((t) => t.entryDate.isSmallerOrEqualValue(toDate));
+    }
+    final headers = await query.get();
+    if (headers.isEmpty) return const [];
+    final ids = headers.map((h) => h.id).toList();
+    final lines = await (db.select(
+      db.transactionLines,
+    )..where((l) => l.transactionId.isIn(ids))).get();
+    final byBill = <String, List<TransactionLineRow>>{};
+    for (final l in lines) {
+      (byBill[l.transactionId] ??= []).add(l);
+    }
+    return [
+      for (final h in headers) BillCodec.fromRows(h, byBill[h.id] ?? const []),
     ];
   }
 
@@ -238,6 +318,9 @@ class BillsRepository {
           updatedByUserId: Value(ctx.userId),
           updatedAt: Value(now),
           updatedByDeviceId: Value(ctx.deviceId),
+          // Any rewrite (edit or restore) brings a bill back to life: a
+          // restore of a deleted bill's history must actually undelete it.
+          deletedAt: const Value(null),
         ),
       );
       await (db.delete(

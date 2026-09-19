@@ -95,6 +95,7 @@ Future<void> seedLedger(AppDatabase db, DeviceContext ctx) async {
 }
 
 void main() {
+  _showDeletedTests();
   testWidgets(
     'ledger lists entries in date order with running balance, debit/credit columns and an edited badge',
     (tester) async {
@@ -228,6 +229,126 @@ void main() {
         findsOneWidget,
       ); // sale gone from the balance
       expect(find.byKey(const Key('ledger.row.type')), findsNWidgets(2));
+    },
+    variant: windowsOnly,
+  );
+}
+
+void _showDeletedTests() {
+  testWidgets(
+    'show-deleted toggle reveals a deleted bill with no running balance, and R restores it',
+    (tester) async {
+      await pumpLedgerly(tester, seed: seedLedger);
+      await tester.enterText(
+        find.byKey(const Key('dashboard.search')),
+        'rashid',
+      );
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter, platform: 'windows');
+      await tester.pumpAndSettle();
+
+      // Delete the sale row (the third row: opening, cash in, sale).
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.arrowDown,
+        platform: 'windows',
+      );
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.arrowDown,
+        platform: 'windows',
+      );
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.delete, platform: 'windows');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+
+      // Gone from the plain view; header balance dropped by the sale.
+      expect(find.byKey(const Key('ledger.row.type')), findsNWidgets(2));
+      expect(find.text('Rs 1,20,000'), findsOneWidget);
+
+      // Show deleted: the sale reappears, marked, with a dash for its balance.
+      await tester.tap(find.byKey(const Key('ledger.showDeleted')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('ledger.row.type')), findsNWidgets(3));
+      expect(find.text('deleted'), findsOneWidget);
+      expect(find.text('—'), findsOneWidget);
+      // The header balance is unaffected by turning the toggle on.
+      expect(find.text('Rs 1,20,000'), findsOneWidget);
+
+      // Select the deleted row (toggling reset the selection to the top, so
+      // two steps down: opening → cash in → the deleted sale), pick its last
+      // history version, restore it.
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.arrowDown,
+        platform: 'windows',
+      );
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.arrowDown,
+        platform: 'windows',
+      );
+      await tester.pumpAndSettle();
+      final versionTiles = find.byWidgetPredicate(
+        (w) =>
+            w.key is ValueKey &&
+            (w.key! as ValueKey).value.toString().startsWith(
+              'history.version.',
+            ),
+      );
+      await tester.tap(versionTiles.first);
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyR, platform: 'windows');
+      await tester.pumpAndSettle();
+
+      // Restored: back in the plain view, balance restored, no longer marked deleted.
+      await tester.tap(find.byKey(const Key('ledger.showDeleted')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('ledger.row.type')), findsNWidgets(3));
+      expect(find.text('deleted'), findsNothing);
+      expect(find.text('Rs 3,17,162'), findsOneWidget);
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
+    'Del does nothing on an already-deleted row shown via the toggle',
+    (tester) async {
+      await pumpLedgerly(tester, seed: seedLedger);
+      await tester.enterText(
+        find.byKey(const Key('dashboard.search')),
+        'rashid',
+      );
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter, platform: 'windows');
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.arrowDown,
+        platform: 'windows',
+      );
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.arrowDown,
+        platform: 'windows',
+      );
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.delete, platform: 'windows');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('ledger.showDeleted')));
+      await tester.pumpAndSettle();
+      // Toggling resets the selection to the top; move down to the deleted row.
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.arrowDown,
+        platform: 'windows',
+      );
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.arrowDown,
+        platform: 'windows',
+      );
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.delete, platform: 'windows');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('ledger.deleteDialog')), findsNothing);
     },
     variant: windowsOnly,
   );

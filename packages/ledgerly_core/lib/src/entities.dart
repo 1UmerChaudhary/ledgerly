@@ -88,6 +88,7 @@ class Bill {
     this.description,
     this.version = 1,
     this.displayNo,
+    this.deleted = false,
   });
 
   final String id;
@@ -111,6 +112,12 @@ class Bill {
   /// "A3F9-1044": rendered from the device code and sequence once saved.
   final String? displayNo;
 
+  /// Display-only: whether this bill is soft-deleted. Never business logic —
+  /// a deleted bill is excluded from every balance query at the SQL level
+  /// (deleted_at IS NULL); this flag only tells the ledger UI to grey it out
+  /// when "show deleted" is on.
+  final bool deleted;
+
   Money get calculatedTotal => lines.isEmpty
       ? (typedAmount ?? Money.zero)
       : lines.fold(Money.zero, (sum, l) => sum + l.finalTotal);
@@ -129,6 +136,7 @@ class Bill {
     String? description,
     int? version,
     String? displayNo,
+    bool? deleted,
   }) => Bill(
     id: id,
     customerId: customerId,
@@ -141,6 +149,7 @@ class Bill {
     description: description ?? this.description,
     version: version ?? this.version,
     displayNo: displayNo ?? this.displayNo,
+    deleted: deleted ?? this.deleted,
   );
 }
 

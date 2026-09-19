@@ -18,13 +18,18 @@ final customerProvider = FutureProvider.family<Customer?, String>((
   return firm?.customers.byId(id);
 });
 
-final ledgerEntriesProvider = FutureProvider.family<List<LedgerEntry>, String>((
-  ref,
-  customerId,
-) async {
-  final firm = await ref.watch(openFirmProvider.future);
-  return firm == null ? const [] : firm.bills.ledgerFor(customerId);
-});
+typedef LedgerKey = ({String customerId, bool includeDeleted});
+
+final ledgerEntriesProvider =
+    FutureProvider.family<List<LedgerEntry>, LedgerKey>((ref, key) async {
+      final firm = await ref.watch(openFirmProvider.future);
+      return firm == null
+          ? const []
+          : firm.bills.ledgerFor(
+              key.customerId,
+              includeDeleted: key.includeDeleted,
+            );
+    });
 
 final billHistoryProvider = FutureProvider.family<List<HistoryEntry>, String>((
   ref,
@@ -66,6 +71,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
   final _focus = FocusNode(debugLabel: 'ledger');
   int? _selected; // null = not moved yet → follow selectBillId, else 0
   int? _selectedHistoryVersion;
+  bool _showDeleted = false;
 
   @override
   void dispose() {
@@ -74,7 +80,20 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
   }
 
   void _refresh() {
-    ref.invalidate(ledgerEntriesProvider(widget.customerId));
+    // Both variants may be cached (the toggle can flip either way), so both
+    // are invalidated rather than just the one currently showing.
+    ref.invalidate(
+      ledgerEntriesProvider((
+        customerId: widget.customerId,
+        includeDeleted: false,
+      )),
+    );
+    ref.invalidate(
+      ledgerEntriesProvider((
+        customerId: widget.customerId,
+        includeDeleted: true,
+      )),
+    );
     ref.invalidate(customerBalanceProvider(widget.customerId));
     ref.invalidate(dashboardRowsProvider);
   }
@@ -152,7 +171,16 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
       });
       return KeyEventResult.handled;
     }
-    if (k == LogicalKeyboardKey.delete) {
+    if (k == LogicalKeyboardKey.keyD &&
+        HardwareKeyboard.instance.isControlPressed) {
+      setState(() {
+        _showDeleted = !_showDeleted;
+        _selected = null;
+        _selectedHistoryVersion = null;
+      });
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.delete && !entry.bill.deleted) {
       _delete(entry);
       return KeyEventResult.handled;
     }
@@ -160,7 +188,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
       _restore(entry);
       return KeyEventResult.handled;
     }
-    if (k == LogicalKeyboardKey.f2) {
+    if (k == LogicalKeyboardKey.f2 && !entry.bill.deleted) {
       context.go('/bills/${entry.bill.id}/edit');
       return KeyEventResult.handled;
     }
@@ -172,11 +200,23 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
     final c = context.colors;
     final customer = ref.watch(customerProvider(widget.customerId)).value;
     final entries =
-        ref.watch(ledgerEntriesProvider(widget.customerId)).value ??
+        ref
+            .watch(
+              ledgerEntriesProvider((
+                customerId: widget.customerId,
+                includeDeleted: _showDeleted,
+              )),
+            )
+            .value ??
         const <LedgerEntry>[];
     final items = ref.watch(itemsListProvider).value ?? const <Item>[];
     final itemNames = {for (final i in items) i.id: i.name};
-    final balance = entries.isEmpty ? Money.zero : entries.last.runningBalance;
+    // Never derived from the visible list: a deleted row shown via the
+    // toggle carries no running balance, and the real balance must not
+    // depend on whether that toggle happens to be on.
+    final balance =
+        ref.watch(customerBalanceProvider(widget.customerId)).value ??
+        Money.zero;
     final selectedIndex = entries.isEmpty ? 0 : _effective(entries);
     final selected = entries.isEmpty ? null : entries[selectedIndex];
 
@@ -230,6 +270,24 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                     ],
                   ),
                 ),
+                Row(
+                  children: [
+                    Checkbox(
+                      key: const Key('ledger.showDeleted'),
+                      value: _showDeleted,
+                      onChanged: (v) => setState(() {
+                        _showDeleted = v ?? false;
+                        _selected = null;
+                        _selectedHistoryVersion = null;
+                      }),
+                    ),
+                    Text(
+                      'Show deleted',
+                      style: TextStyle(fontSize: 12.5, color: c.ink2),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 18),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -352,8 +410,10 @@ class _LedgerTable extends StatelessWidget {
               itemCount: entries.length,
               itemBuilder: (context, i) {
                 final e = entries[i];
+                final deleted = e.bill.deleted;
                 final signed = e.bill.signedAmount;
                 final isSel = i == selected;
+                final rowColor = deleted ? c.ink3 : c.ink;
                 return InkWell(
                   onTap: () => onTap(i),
                   child: Container(
@@ -377,7 +437,10 @@ class _LedgerTable extends StatelessWidget {
                           80,
                           Text(
                             shortDate(e.bill.entryDate),
-                            style: numberStyle.copyWith(fontSize: 13),
+                            style: numberStyle.copyWith(
+                              fontSize: 13,
+                              color: rowColor,
+                            ),
                           ),
                         ),
                         cellBox(
@@ -399,10 +462,36 @@ class _LedgerTable extends StatelessWidget {
                                   typeLabel(e.bill.type),
                                   key: const Key('ledger.row.type'),
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 13.5),
+                                  style: TextStyle(
+                                    fontSize: 13.5,
+                                    color: rowColor,
+                                    decoration: deleted
+                                        ? TextDecoration.lineThrough
+                                        : null,
+                                  ),
                                 ),
                               ),
-                              if (e.bill.version > 1) ...[
+                              if (deleted) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                    vertical: 1,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: c.giveableSoft,
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                  child: Text(
+                                    'deleted',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: c.giveable,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ] else if (e.bill.version > 1) ...[
                                 const SizedBox(width: 6),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
@@ -441,7 +530,10 @@ class _LedgerTable extends StatelessWidget {
                                 ? formatMoney(signed, symbol: false)
                                 : '',
                             textAlign: TextAlign.right,
-                            style: numberStyle.copyWith(fontSize: 13.5),
+                            style: numberStyle.copyWith(
+                              fontSize: 13.5,
+                              color: rowColor,
+                            ),
                           ),
                         ),
                         cellBox(
@@ -451,20 +543,30 @@ class _LedgerTable extends StatelessWidget {
                                 ? formatMoney(-signed, symbol: false)
                                 : '',
                             textAlign: TextAlign.right,
-                            style: numberStyle.copyWith(fontSize: 13.5),
+                            style: numberStyle.copyWith(
+                              fontSize: 13.5,
+                              color: rowColor,
+                            ),
                           ),
                         ),
                         cellBox(
                           120,
                           Text(
-                            formatMoney(e.runningBalance.abs(), symbol: false),
+                            e.runningBalance == null
+                                ? '—'
+                                : formatMoney(
+                                    e.runningBalance!.abs(),
+                                    symbol: false,
+                                  ),
                             textAlign: TextAlign.right,
                             style: numberStyle.copyWith(
                               fontSize: 13.5,
                               fontWeight: FontWeight.w500,
-                              color: e.runningBalance.isNegative
-                                  ? c.giveable
-                                  : c.ink,
+                              color: e.runningBalance == null
+                                  ? c.ink3
+                                  : (e.runningBalance!.isNegative
+                                        ? c.giveable
+                                        : c.ink),
                             ),
                           ),
                         ),
