@@ -39,15 +39,6 @@ final billHistoryProvider = FutureProvider.family<List<HistoryEntry>, String>((
   return firm == null ? const [] : firm.bills.historyFor(billId);
 });
 
-String typeLabel(TransactionType t) => switch (t) {
-  TransactionType.sale => 'Sale',
-  TransactionType.purchase => 'Purchase',
-  TransactionType.cashIn => 'Cash in',
-  TransactionType.cashOut => 'Cash out',
-  TransactionType.openingBalance => 'Opening balance',
-  TransactionType.adjustment => 'Adjustment',
-};
-
 String shortDate(String iso) {
   final p = iso.split('-');
   return p.length == 3 ? '${p[2]}/${p[1]}/${p[0].substring(2)}' : iso;
@@ -459,7 +450,7 @@ class _LedgerTable extends StatelessWidget {
                             children: [
                               Flexible(
                                 child: Text(
-                                  typeLabel(e.bill.type),
+                                  transactionTypeLabel(e.bill.type),
                                   key: const Key('ledger.row.type'),
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
@@ -633,7 +624,7 @@ class _DetailPanel extends ConsumerWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            '${typeLabel(bill.type)} · ${shortDate(bill.entryDate)}${bill.description == null ? '' : ' · ${bill.description}'}',
+            '${transactionTypeLabel(bill.type)} · ${shortDate(bill.entryDate)}${bill.description == null ? '' : ' · ${bill.description}'}',
             style: TextStyle(fontSize: 12.5, color: c.ink2),
           ),
           const SizedBox(height: 10),

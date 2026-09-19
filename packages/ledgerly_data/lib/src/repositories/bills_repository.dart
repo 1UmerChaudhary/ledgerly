@@ -6,6 +6,8 @@ import '../db/app_database.dart';
 import '../device_context.dart';
 import '../ids.dart';
 import '../outbox.dart';
+import '../printing/print_models.dart';
+import 'firms_repository.dart';
 
 class LedgerEntry {
   const LedgerEntry(this.bill, this.runningBalance);
@@ -381,6 +383,210 @@ class BillsRepository {
             ),
           );
     }
+  }
+
+  /// Everything the 80 mm slip needs for [billId], as of the moment it is
+  /// printed — the template does no lookups of its own.
+  Future<SlipModel> slipFor(String billId, {required int printedAt}) async {
+    final bill = await byId(billId);
+    if (bill == null) throw StateError('No bill $billId');
+    final firm = await FirmsRepository(db, ctx).get();
+    final customerName = bill.customerId == null
+        ? null
+        : (await (db.select(
+            db.customers,
+          )..where((c) => c.id.equals(bill.customerId!))).getSingle()).name;
+    final itemIds = bill.lines.map((l) => l.itemId).toSet();
+    final itemNames = <String, String>{};
+    for (final id in itemIds) {
+      final row = await (db.select(
+        db.items,
+      )..where((i) => i.id.equals(id))).getSingleOrNull();
+      itemNames[id] = row?.name ?? 'Item';
+    }
+    Money? previousBalance;
+    if (bill.customerId != null) {
+      final row = await (db.select(
+        db.transactions,
+      )..where((t) => t.id.equals(bill.id))).getSingle();
+      previousBalance = await _balanceBefore(
+        bill.customerId!,
+        entryDate: row.entryDate,
+        createdAt: row.createdAt,
+        id: row.id,
+      );
+    }
+    return SlipModel(
+      firmName: firm.name,
+      firmContact: firm.contactNumber,
+      firmAddress: firm.address,
+      displayNo: bill.displayNo!,
+      entryDate: bill.entryDate,
+      customerName: customerName,
+      lines: [
+        for (final l in bill.lines)
+          SlipLineView(
+            itemName: itemNames[l.itemId] ?? 'Item',
+            quantityDescription: lineQuantityDescription(l),
+            rateDescription: lineRateDescription(l),
+            amount: l.finalTotal,
+          ),
+      ],
+      total: bill.finalAmount,
+      previousBalance: previousBalance,
+      newBalance: previousBalance == null
+          ? null
+          : previousBalance + bill.signedAmount,
+      edited: bill.version > 1,
+      printedAt: printedAt,
+      deviceCode: ctx.deviceShortCode,
+    );
+  }
+
+  /// Everything the A4 ledger needs for [customerId] over an optional date
+  /// range (either end null means unbounded on that side).
+  Future<LedgerPrintModel> ledgerPrintFor(
+    String customerId, {
+    String? fromDate,
+    String? toDate,
+    required int printedAt,
+  }) async {
+    final firm = await FirmsRepository(db, ctx).get();
+    final customer = await (db.select(
+      db.customers,
+    )..where((c) => c.id.equals(customerId))).getSingle();
+    final opening = fromDate == null
+        ? Money.zero
+        : await _sumBefore(customerId, entryDate: fromDate);
+    final windowed = await db
+        .customSelect(
+          'SELECT * FROM transactions WHERE firm_id = ? AND customer_id = ? '
+          'AND deleted_at IS NULL '
+          '${fromDate != null ? 'AND entry_date >= ? ' : ''}'
+          '${toDate != null ? 'AND entry_date <= ? ' : ''}'
+          'ORDER BY entry_date, created_at, id',
+          variables: [
+            Variable(ctx.firmId),
+            Variable(customerId),
+            if (fromDate != null) Variable(fromDate),
+            if (toDate != null) Variable(toDate),
+          ],
+          readsFrom: {db.transactions},
+        )
+        .get();
+    var running = opening;
+    final rows = <LedgerPrintRow>[];
+    for (final r in windowed) {
+      final header = db.transactions.map(r.data);
+      final signed = Money(r.read<int>('signed_amount'));
+      running += signed;
+      rows.add(
+        LedgerPrintRow(
+          date: header.entryDate,
+          displayNo: renderDisplayNo(header.deviceShortCode, header.displaySeq),
+          typeLabel: transactionTypeLabel(
+            TransactionType.values.byName(_camelType(header.type)),
+          ),
+          description: header.description,
+          debit: signed.isPositive ? signed : null,
+          credit: signed.isNegative ? -signed : null,
+          runningBalance: running,
+        ),
+      );
+    }
+    return LedgerPrintModel(
+      firmName: firm.name,
+      firmContact: firm.contactNumber,
+      firmAddress: firm.address,
+      customerName: customer.name,
+      fromDate: fromDate,
+      toDate: toDate,
+      openingBalance: opening,
+      rows: rows,
+      closingBalance: running,
+      printedAt: printedAt,
+    );
+  }
+
+  /// Records that something was printed or exported. Insert-only, like every
+  /// other sync-safe log in this schema.
+  Future<void> logPrint({
+    required String kind,
+    String? transactionId,
+    String? customerId,
+    required int printedAt,
+    Money? printedBalanceAfter,
+    String? rangeFrom,
+    String? rangeTo,
+  }) => db
+      .into(db.printLog)
+      .insert(
+        PrintLogCompanion.insert(
+          id: newId(),
+          firmId: ctx.firmId,
+          transactionId: Value(transactionId),
+          customerId: Value(customerId),
+          kind: kind,
+          printedAt: printedAt,
+          deviceId: ctx.deviceId,
+          printedBalanceAfter: Value(printedBalanceAfter?.paisa),
+          rangeFrom: Value(rangeFrom),
+          rangeTo: Value(rangeTo),
+        ),
+      );
+
+  /// The customer's signed balance strictly before the bill identified by
+  /// ([entryDate], [createdAt], [id]) in ledger order — what "previous
+  /// balance" means on a slip. Ordered comparison is spelled out (not a SQL
+  /// row-value tuple) so it works the same on every engine.
+  Future<Money> _balanceBefore(
+    String customerId, {
+    required String entryDate,
+    required int createdAt,
+    required String id,
+  }) async {
+    final row = await db
+        .customSelect(
+          'SELECT COALESCE(SUM(signed_amount), 0) AS b FROM transactions '
+          'WHERE firm_id = ? AND customer_id = ? AND deleted_at IS NULL AND ('
+          '  entry_date < ? OR '
+          '  (entry_date = ? AND created_at < ?) OR '
+          '  (entry_date = ? AND created_at = ? AND id < ?)'
+          ')',
+          variables: [
+            Variable(ctx.firmId),
+            Variable(customerId),
+            Variable(entryDate),
+            Variable(entryDate),
+            Variable(createdAt),
+            Variable(entryDate),
+            Variable(createdAt),
+            Variable(id),
+          ],
+          readsFrom: {db.transactions},
+        )
+        .getSingle();
+    return Money(row.read<int>('b'));
+  }
+
+  Future<Money> _sumBefore(String customerId, {required String entryDate}) => db
+      .customSelect(
+        'SELECT COALESCE(SUM(signed_amount), 0) AS b FROM transactions '
+        'WHERE firm_id = ? AND customer_id = ? AND deleted_at IS NULL AND entry_date < ?',
+        variables: [
+          Variable(ctx.firmId),
+          Variable(customerId),
+          Variable(entryDate),
+        ],
+        readsFrom: {db.transactions},
+      )
+      .getSingle()
+      .then((r) => Money(r.read<int>('b')));
+
+  static String _camelType(String snake) {
+    final parts = snake.split('_');
+    return parts.first +
+        parts.skip(1).map((p) => p[0].toUpperCase() + p.substring(1)).join();
   }
 
   Future<int?> _maxSeqForDevice() async {

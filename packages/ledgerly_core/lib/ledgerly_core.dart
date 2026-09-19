@@ -6,6 +6,7 @@ export 'src/bill_diff.dart';
 export 'src/display_no.dart';
 export 'src/entities.dart';
 export 'src/hlc.dart';
+export 'src/line_description.dart';
 export 'src/money.dart';
 export 'src/normalize.dart';
 export 'src/opening_balance_csv.dart';

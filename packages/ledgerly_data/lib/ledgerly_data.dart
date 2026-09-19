@@ -8,6 +8,7 @@ export 'src/db/app_database.dart';
 export 'src/device_context.dart';
 export 'src/ids.dart';
 export 'src/outbox.dart';
+export 'src/printing/print_models.dart';
 export 'src/repositories/bills_repository.dart';
 export 'src/repositories/customers_repository.dart';
 export 'src/repositories/firm_setup.dart';
