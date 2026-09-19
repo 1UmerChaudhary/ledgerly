@@ -20,7 +20,7 @@ loss. The user is learning system design along the way.
 | Platform order | Windows → Android → iOS/macOS | Sell sooner |
 | Mobile role | Full data entry | So conflict handling is real |
 | Sync model | Newer-wins on **bills as the unit**; losers always written to history (deterministic id); balances are never stored, so nothing to sync or repair | User chose simplicity; guardrails close the money-loss hole |
-| Balances | **Computed, never stored.** Running balance via SQL window function; dashboard via `customer_balances` view. No `balance_before/after`, no `balance_cached`, no `replay()`. Benchmark test (200k txns, both queries < 50 ms) guards the assumption | One source of truth; removes the whole cache-maintenance and cache-sync problem; derived data is free to add later |
+| Balances | **Computed, never stored.** Running balance via SQL window function; dashboard via `customer_balances` view. No `balance_before/after`, no `balance_cached`, no `replay()`. Benchmark test (200k txns; balance aggregate and raw ledger query < 200 ms, 20k materialised ledger entries < 1.5 s, budgets sized for CI runners) guards the assumption | One source of truth; removes the whole cache-maintenance and cache-sync problem; derived data is free to add later |
 | Clock | Hybrid logical clock per device seeded from DB on every start + learned server offset; server **rejects** (never clamps) skewed stamps; strict `(hlc, device_id)` order | Client clocks never sole authority |
 | Bills | Multi-item: header + lines, one `version`; lines replaced wholesale on pull; stable line ids across edits | Mill sells oil + oilcake in one bill; diff needs line identity |
 | Walk-in sales | `customer_id` nullable; Cash Sales view; never in a ledger | Counter sales exist |
