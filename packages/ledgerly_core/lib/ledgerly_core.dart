@@ -2,3 +2,4 @@
 library;
 
 export 'src/money.dart';
+export 'src/weight.dart';
