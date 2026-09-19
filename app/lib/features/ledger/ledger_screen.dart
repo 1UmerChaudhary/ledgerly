@@ -6,9 +6,11 @@ import 'package:ledgerly_core/ledgerly_core.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 
 import '../../bootstrap/providers.dart';
+import '../../printing/print_actions.dart';
 import '../../theme/ledgerly_theme.dart';
 import '../bills/bill_draft.dart';
 import '../dashboard/dashboard_screen.dart';
+import 'widgets/print_range_dialog.dart';
 
 final customerProvider = FutureProvider.family<Customer?, String>((
   ref,
@@ -137,17 +139,42 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
     return i < 0 ? 0 : i;
   }
 
+  Future<void> _printLedgerRange() async {
+    final firm = ref.read(openFirmProvider).value;
+    if (firm == null) return;
+    final range = await showPrintRangeDialog(context);
+    if (range == null || !mounted) return;
+    await printLedger(
+      ref,
+      firm,
+      widget.customerId,
+      fromDate: range.fromDate,
+      toDate: range.toDate,
+    );
+  }
+
   KeyEventResult _onKey(
     FocusNode node,
     KeyEvent event,
     List<LedgerEntry> entries,
   ) {
-    if (event is! KeyDownEvent || entries.isEmpty) {
-      return KeyEventResult.ignored;
-    }
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final k = event.logicalKey;
+    if (k == LogicalKeyboardKey.keyP &&
+        HardwareKeyboard.instance.isControlPressed &&
+        HardwareKeyboard.instance.isShiftPressed) {
+      _printLedgerRange();
+      return KeyEventResult.handled;
+    }
+    if (entries.isEmpty) return KeyEventResult.ignored;
     final current = _effective(entries);
     final entry = entries[current];
+    if (k == LogicalKeyboardKey.keyP &&
+        HardwareKeyboard.instance.isControlPressed) {
+      final firm = ref.read(openFirmProvider).value;
+      if (firm != null) printSlip(ref, firm, entry.bill.id);
+      return KeyEventResult.handled;
+    }
     if (k == LogicalKeyboardKey.arrowDown) {
       setState(() {
         _selected = (current + 1).clamp(0, entries.length - 1);

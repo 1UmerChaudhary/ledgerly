@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:ledgerly_core/ledgerly_core.dart';
 
 import '../../bootstrap/providers.dart';
+import '../../printing/print_actions.dart';
 import '../../theme/ledgerly_theme.dart';
 import 'bill_draft.dart';
 import 'widgets/date_field.dart';
@@ -165,6 +166,11 @@ class _BillScreenState extends ConsumerState<BillScreen> {
         const SingleActivator(LogicalKeyboardKey.escape): () => _escape(d),
         const SingleActivator(LogicalKeyboardKey.keyN, control: true): () {
           if (d.saved != null) _ctl.startNextForSameCustomer();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyP, control: true): () {
+          final firm = ref.read(openFirmProvider).value;
+          final saved = d.saved;
+          if (firm != null && saved != null) printSlip(ref, firm, saved.id);
         },
         const SingleActivator(LogicalKeyboardKey.minus, control: true): () {
           final focused = FocusManager.instance.primaryFocus?.debugLabel ?? '';

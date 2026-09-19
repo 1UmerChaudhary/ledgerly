@@ -12,6 +12,8 @@ import 'package:ledgerly/bootstrap/global_prefs.dart';
 import 'package:ledgerly/bootstrap/providers.dart';
 import 'package:ledgerly_core/ledgerly_core.dart';
 import 'package:ledgerly/features/settings/settings_providers.dart';
+import 'package:ledgerly/printing/print_actions.dart';
+import 'package:ledgerly/printing/printing_service.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 
 /// Boots the real app against an in-memory database. Use together with
@@ -46,6 +48,7 @@ Future<ProviderContainer> pumpLedgerly(
   // disk: AppPaths points somewhere inert, and the backup runner is faked.
   // BackupService's real file behaviour is already tested end-to-end in
   // packages/ledgerly_data/test/backup_service_test.dart via plain `dart test`.
+  final fakePrinting = FakePrintingService();
   final container = ProviderContainer(
     overrides: [
       globalPrefsProvider.overrideWithValue(prefs),
@@ -53,6 +56,7 @@ Future<ProviderContainer> pumpLedgerly(
         AppPaths(Directory('ledgerly-test-paths-unused')),
       ),
       backupRunnerProvider.overrideWith(FakeBackupRunner.new),
+      printingServiceProvider.overrideWithValue(fakePrinting),
       databaseOpenerProvider.overrideWithValue((firmId) async => db),
     ],
   );
@@ -93,4 +97,37 @@ class FakeBackupRunner extends BackupRunner {
 
   @override
   Future<void> runIfDue() async {}
+}
+
+/// Records every call instead of touching a real printer or save dialog —
+/// the OS side of printing cannot be exercised inside an automated test.
+class FakePrintingService implements PrintingService {
+  final List<String> printedJobs = [];
+  final List<String> exportedPdfNames = [];
+  final List<String> exportedPngBaseNames = [];
+  bool exportPdfResult = true;
+  int exportPngPageCount = 1;
+
+  @override
+  Future<void> print(Uint8List pdfBytes, {required String jobName}) async {
+    printedJobs.add(jobName);
+  }
+
+  @override
+  Future<bool> exportPdf(
+    Uint8List pdfBytes, {
+    required String suggestedName,
+  }) async {
+    exportedPdfNames.add(suggestedName);
+    return exportPdfResult;
+  }
+
+  @override
+  Future<int> exportPng(
+    Uint8List pdfBytes, {
+    required String suggestedBaseName,
+  }) async {
+    exportedPngBaseNames.add(suggestedBaseName);
+    return exportPngPageCount;
+  }
 }
