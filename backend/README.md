@@ -61,7 +61,30 @@ conflict's loser is visible on the server but not synced to every device; a bill
 tombstoned or merged customer isn't handled (docs/design-spec.md Section 4 step 3); customer/item
 names aren't enriched into a history snapshot for display. Row Level Security is deferred until
 there's a real non-superuser app role to enforce it against (see the first migration's
-docstring). Deployment to Cloud Run hasn't started.
+docstring).
+
+## Deploying
+
+Cost-driven choice for now: [Render](https://render.com) for the API (free web service, no card)
+and [Neon](https://neon.tech) for Postgres (free tier, scales to zero, no card) — Cloud Run +
+Cloud SQL is the originally-planned pair and stays the plan once there's a working payment
+method for the personal GCP project; nothing about the code differs either way, since both are
+"a FastAPI app behind an ASGI server, talking to a Postgres connection string."
+
+1. Create a Neon project, copy its connection string, and run migrations against it directly —
+   from any machine with this repo, once (not from Render — see `render.yaml`'s comment on why
+   migrations are deliberately not part of the deploy step):
+   ```
+   LEDGERLY_DATABASE_URL="<neon connection string>" .venv/bin/python -m alembic upgrade head
+   ```
+2. On Render: "New +" → "Blueprint" → connect the `1UmerChaudhary/ledgerly` repo. Render reads
+   `render.yaml` at the repo root and creates the service, asking only for
+   `LEDGERLY_DATABASE_URL` (paste the same Neon connection string) — `LEDGERLY_JWT_SECRET` is
+   generated automatically.
+3. Once deployed, `https://<service>.onrender.com/healthz` should return `{"status": "ok"}`. The
+   free plan spins the service down after 15 minutes of no traffic; the first request after that
+   takes a few seconds to wake it back up — the app's Sync now button will just look slow that
+   one time, not broken.
 
 ## Working on it locally
 

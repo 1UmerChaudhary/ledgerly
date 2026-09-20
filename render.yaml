@@ -1,0 +1,25 @@
+# Render Blueprint for the phase-2 backend (see backend/README.md).
+# Deploying: on render.com, "New +" -> "Blueprint" -> connect this repo.
+# Render reads this file and creates the service below, asking only for
+# LEDGERLY_DATABASE_URL (paste the Neon connection string there) --
+# LEDGERLY_JWT_SECRET is generated automatically, never typed by hand.
+#
+# Database migrations are NOT run here on purpose: they're applied directly
+# against Neon before the first deploy (`alembic upgrade head`), the same
+# way they're applied to any other Postgres this backend talks to. Keeping
+# schema changes decoupled from app deploys means a bad deploy can never
+# also be a bad migration, and vice versa.
+services:
+  - type: web
+    name: ledgerly-backend
+    runtime: python
+    rootDir: backend
+    plan: free
+    region: oregon
+    buildCommand: pip install -e .
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: LEDGERLY_DATABASE_URL
+        sync: false
+      - key: LEDGERLY_JWT_SECRET
+        generateValue: true
