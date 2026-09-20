@@ -11,6 +11,7 @@ export 'src/outbox.dart';
 export 'src/printing/ledger_pdf.dart';
 export 'src/printing/print_models.dart';
 export 'src/printing/slip_pdf.dart';
+export 'src/printing/esc_pos_renderer.dart';
 export 'src/repositories/bills_repository.dart';
 export 'src/repositories/customers_repository.dart';
 export 'src/repositories/firm_setup.dart';
