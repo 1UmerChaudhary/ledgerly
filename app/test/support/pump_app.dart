@@ -6,12 +6,14 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:ledgerly/app.dart';
 
 import 'package:ledgerly/bootstrap/app_paths.dart';
 import 'package:ledgerly/bootstrap/global_prefs.dart';
 import 'package:ledgerly/bootstrap/providers.dart';
 import 'package:ledgerly_core/ledgerly_core.dart';
+import 'package:ledgerly/features/settings/cloud_sync_providers.dart';
 import 'package:ledgerly/features/settings/settings_providers.dart';
 import 'package:ledgerly/platform/native_pickers.dart';
 import 'package:ledgerly/printing/print_actions.dart';
@@ -81,6 +83,7 @@ Future<ProviderContainer> pumpLedgerly(
   final fakePickers = FakeNativePickers();
   final fakePrinterDiscovery = FakePrinterDiscovery();
   final fakeRestoreService = FakeBackupService();
+  final fakeHttp = FakeHttpClient();
   final container = ProviderContainer(
     overrides: [
       globalPrefsProvider.overrideWithValue(prefs),
@@ -92,6 +95,7 @@ Future<ProviderContainer> pumpLedgerly(
       nativePickersProvider.overrideWithValue(fakePickers),
       printerDiscoveryProvider.overrideWithValue(fakePrinterDiscovery),
       restoreServiceProvider.overrideWithValue(fakeRestoreService),
+      httpClientProvider.overrideWithValue(fakeHttp),
       databaseOpenerProvider.overrideWithValue(openDb),
     ],
   );
@@ -239,5 +243,27 @@ class FakeBackupService extends BackupService {
     validateBackup(backupFile);
     restoredPath = backupFile.path;
     return File('unused-pre-restore-copy');
+  }
+}
+
+/// Stands in for the phase-2 backend — a real socket from the
+/// flutter_tester binary is exactly the kind of OS call that hangs in this
+/// project's sandboxed environment, same reasoning as printing and file
+/// pickers. Defaults to throwing on any request, so a test that forgets to
+/// set [handler] fails loudly instead of hanging or silently doing nothing.
+class FakeHttpClient extends http.BaseClient {
+  Future<http.Response> Function(http.BaseRequest request) handler =
+      (request) async => throw StateError(
+        'FakeHttpClient: unexpected ${request.method} ${request.url}',
+      );
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final response = await handler(request);
+    return http.StreamedResponse(
+      Stream.value(response.bodyBytes),
+      response.statusCode,
+      headers: response.headers,
+    );
   }
 }

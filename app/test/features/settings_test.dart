@@ -27,6 +27,8 @@ Future<void> seed(AppDatabase db, DeviceContext ctx) async {
 }
 
 Future<void> type(WidgetTester tester, Key key, String text) async {
+  await tester.ensureVisible(find.byKey(key));
+  await tester.pumpAndSettle();
   await tester.tap(find.byKey(key));
   await tester.pump();
   await tester.enterText(find.byKey(key), text);
@@ -75,6 +77,8 @@ void main() {
         r'D:\LedgerlyBackups',
       );
       expect(find.textContaining('Backed up'), findsNothing);
+      await tester.ensureVisible(find.byKey(const Key('settings.backupNow')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('settings.backupNow')));
       await tester.pumpAndSettle();
       expect(find.textContaining('Backed up'), findsWidgets);
@@ -150,6 +154,10 @@ void main() {
     ) as FakeNativePickers).folderToReturn = r'D:\LedgerlyBackups';
     await pressCtrl(tester, LogicalKeyboardKey.comma);
 
+    await tester.ensureVisible(
+      find.byKey(const Key('settings.browseBackupFolder')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('settings.browseBackupFolder')));
     await tester.pumpAndSettle();
 
@@ -167,6 +175,8 @@ void main() {
         null;
     await pressCtrl(tester, LogicalKeyboardKey.comma);
 
+    await tester.ensureVisible(find.byKey(const Key('settings.restore')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('settings.restore')));
     await tester.pumpAndSettle();
 
@@ -184,6 +194,8 @@ void main() {
       ) as FakeNativePickers).fileToReturn = r'D:\backup.db';
       await pressCtrl(tester, LogicalKeyboardKey.comma);
 
+      await tester.ensureVisible(find.byKey(const Key('settings.restore')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('settings.restore')));
       await tester.pumpAndSettle();
       expect(find.textContaining(r'D:\backup.db'), findsOneWidget);
@@ -208,6 +220,8 @@ void main() {
       ) as FakeNativePickers).fileToReturn = r'D:\backup.db';
       await pressCtrl(tester, LogicalKeyboardKey.comma);
 
+      await tester.ensureVisible(find.byKey(const Key('settings.restore')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('settings.restore')));
       await tester.pumpAndSettle();
       await tester.tap(
@@ -234,6 +248,8 @@ void main() {
           'That file does not exist.';
       await pressCtrl(tester, LogicalKeyboardKey.comma);
 
+      await tester.ensureVisible(find.byKey(const Key('settings.restore')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('settings.restore')));
       await tester.pumpAndSettle();
       await tester.tap(

@@ -8,8 +8,10 @@ import 'package:ledgerly_data/ledgerly_data.dart';
 import '../../bootstrap/providers.dart';
 import '../../printing/print_actions.dart';
 import '../../printing/printing_service.dart';
+import '../../sync/backend_client.dart';
 import '../../theme/ledgerly_theme.dart';
 import '../dashboard/dashboard_screen.dart';
+import 'cloud_sync_providers.dart';
 import 'settings_providers.dart';
 
 /// Sentinel returned by the printer dialog's "Ask each time" option, kept
@@ -33,8 +35,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _contact = TextEditingController();
   final _address = TextEditingController();
   final _folder = TextEditingController();
+  final _backendUrl = TextEditingController();
+  final _email = TextEditingController();
+  final _password = TextEditingController();
   bool _loaded = false;
   String? _message;
+  String? _cloudError;
 
   @override
   void dispose() {
@@ -42,6 +48,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _contact.dispose();
     _address.dispose();
     _folder.dispose();
+    _backendUrl.dispose();
+    _email.dispose();
+    _password.dispose();
     super.dispose();
   }
 
@@ -52,6 +61,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _contact.text = firm.contactNumber;
     _address.text = firm.address ?? '';
     _folder.text = folder ?? '';
+    _backendUrl.text =
+        ref.read(globalPrefsProvider).backendUrl ?? defaultBackendUrl;
   }
 
   Future<void> _saveFirm() async {
@@ -153,6 +164,46 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  Future<void> _saveBackendUrl() async {
+    final url = _backendUrl.text.trim();
+    await ref.read(globalPrefsProvider).setBackendUrl(url.isEmpty ? null : url);
+  }
+
+  Future<void> _register() async {
+    setState(() => _cloudError = null);
+    await _saveBackendUrl();
+    try {
+      await ref
+          .read(cloudSessionProvider.notifier)
+          .register(
+            name: _name.text.trim().isEmpty ? 'Owner' : _name.text.trim(),
+            email: _email.text.trim(),
+            password: _password.text,
+          );
+      _password.clear();
+    } on BackendException catch (e) {
+      if (mounted) setState(() => _cloudError = e.message);
+    }
+  }
+
+  Future<void> _login() async {
+    setState(() => _cloudError = null);
+    await _saveBackendUrl();
+    try {
+      await ref
+          .read(cloudSessionProvider.notifier)
+          .login(email: _email.text.trim(), password: _password.text);
+      _password.clear();
+    } on BackendException catch (e) {
+      if (mounted) setState(() => _cloudError = e.message);
+    }
+  }
+
+  Future<void> _disconnect() =>
+      ref.read(cloudSessionProvider.notifier).logout();
+
+  Future<void> _syncNow() => ref.read(syncRunnerProvider.notifier).syncNow();
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -160,6 +211,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final folder = ref.watch(backupFolderProvider);
     final backup = ref.watch(backupRunnerProvider);
     final printer = ref.watch(printerChoiceProvider);
+    final cloudSession = ref.watch(cloudSessionProvider);
+    final syncStatus = ref.watch(syncRunnerProvider);
     if (firm != null) _fill(firm, folder);
 
     return CallbackShortcuts(
@@ -269,6 +322,105 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ],
                 ),
               ),
+            ]),
+            _section(context, 'Cloud sync', [
+              _field(
+                'Server',
+                TextField(
+                  key: const Key('settings.backendUrl'),
+                  controller: _backendUrl,
+                  style: numberStyle.copyWith(fontSize: 13),
+                  onSubmitted: (_) => _saveBackendUrl(),
+                ),
+              ),
+              if (cloudSession == null) ...[
+                _field(
+                  'Email',
+                  TextField(
+                    key: const Key('settings.cloudEmail'),
+                    controller: _email,
+                  ),
+                ),
+                _field(
+                  'Password',
+                  TextField(
+                    key: const Key('settings.cloudPassword'),
+                    controller: _password,
+                    obscureText: true,
+                  ),
+                ),
+                _field(
+                  '',
+                  Row(
+                    children: [
+                      OutlinedButton(
+                        key: const Key('settings.cloudRegister'),
+                        onPressed: _register,
+                        child: const Text('Create cloud account'),
+                      ),
+                      const SizedBox(width: 10),
+                      OutlinedButton(
+                        key: const Key('settings.cloudLogin'),
+                        onPressed: _login,
+                        child: const Text('Log in'),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_cloudError case final e?)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 130),
+                    child: Text(
+                      e,
+                      key: const Key('settings.cloudError'),
+                      style: TextStyle(color: c.giveable, fontSize: 12.5),
+                    ),
+                  ),
+              ] else ...[
+                _field(
+                  'Connected',
+                  Text(
+                    key: const Key('settings.cloudConnected'),
+                    '${cloudSession.email} — ${cloudSession.firmName}',
+                    style: TextStyle(color: c.ink2),
+                  ),
+                ),
+                _field(
+                  'Sync',
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          syncStatus.error ??
+                              (syncStatus.running
+                                  ? 'Syncing…'
+                                  : syncStatus.summary ??
+                                        'Not yet in this session'),
+                          key: const Key('settings.syncStatus'),
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: syncStatus.error != null
+                                ? c.giveable
+                                : c.ink2,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      FilledButton(
+                        key: const Key('settings.syncNow'),
+                        onPressed: syncStatus.running ? null : _syncNow,
+                        child: const Text('Sync now'),
+                      ),
+                      const SizedBox(width: 10),
+                      OutlinedButton(
+                        key: const Key('settings.cloudDisconnect'),
+                        onPressed: _disconnect,
+                        child: const Text('Disconnect'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ]),
             _section(context, 'Backup', [
               _field(
