@@ -31,6 +31,21 @@ ITEM_COLUMNS = (
     "deleted_at",
 )
 
+CUSTOMER_COLUMNS = (
+    "name",
+    "name_normalized",
+    "phone",
+    "phone_normalized",
+    "notes",
+    "created_by_user_id",
+    "merged_into_id",
+    "needs_review",
+    "created_at",
+    "updated_at",
+    "updated_by_device_id",
+    "deleted_at",
+)
+
 
 class TimeResponse(BaseModel):
     server_time: int
@@ -69,9 +84,15 @@ class Rejected(BaseModel):
     reason: str
 
 
+class Rewrite(BaseModel):
+    old_id: str
+    new_id: str
+
+
 class PushResponse(BaseModel):
     accepted: list[Accepted]
     rejected: list[Rejected]
+    rewrites: list[Rewrite]
     server_time: int
 
 
@@ -119,11 +140,60 @@ async def _record_sync_change(
     )
 
 
+async def _newer_write_or_ack(
+    db: AsyncSession,
+    *,
+    table_name: str,
+    columns: tuple[str, ...],
+    firm_id: str,
+    row: PushRow,
+    server_time: int,
+    next_seq: int,
+    updated_at: int,
+) -> tuple[Accepted, int]:
+    """The generic "seen row" case shared by every table: newer write wins
+    and is applied + logged; older or identical is acked but left alone —
+    the device learns the real current state on its next pull.
+    """
+    existing = (
+        await db.execute(
+            text(
+                f"SELECT updated_at, updated_by_device_id FROM {table_name} "
+                "WHERE firm_id = :firm_id AND id = :id"
+            ),
+            {"firm_id": firm_id, "id": row.id},
+        )
+    ).one()
+    incoming_key = (updated_at, str(row.data.get("updated_by_device_id")))
+    existing_key = (existing.updated_at, str(existing.updated_by_device_id))
+    if incoming_key <= existing_key:
+        return Accepted(id=row.id, updated_at=updated_at), next_seq
+
+    await db.execute(
+        text(
+            f"UPDATE {table_name} SET "
+            + ", ".join(f"{c} = :{c}" for c in columns if c != "created_by_user_id")
+            + " WHERE firm_id = :firm_id AND id = :id"
+        ),
+        {"id": row.id, "firm_id": firm_id, **row.data},
+    )
+    await _record_sync_change(
+        db,
+        firm_id=firm_id,
+        seq=next_seq,
+        table_name=table_name,
+        row_id=row.id,
+        changed_at=server_time,
+    )
+    return Accepted(id=row.id, updated_at=updated_at), next_seq + 1
+
+
 async def _push_item_row(
     db: AsyncSession, *, firm_id: str, row: PushRow, server_time: int, next_seq: int
-) -> tuple[Accepted | Rejected, int]:
-    """Returns the outcome and the next unused sequence number (advanced by
-    one only when something actually changed, per _reserve_sequence_block).
+) -> tuple[Accepted | Rejected, int, list[Rewrite]]:
+    """Returns the outcome, the next unused sequence number (advanced by one
+    only when something actually changed, per _reserve_sequence_block), and
+    any rewrites (always empty for items — only customers can merge).
 
     Raises IntegrityError for the caller to turn into a rejection — it must
     not be caught here: catching it inside the caller's savepoint block
@@ -132,21 +202,18 @@ async def _push_item_row(
     """
     updated_at = row.data.get("updated_at")
     if not isinstance(updated_at, int):
-        return Rejected(id=row.id, reason="invalid"), next_seq
+        return Rejected(id=row.id, reason="invalid"), next_seq, []
     if updated_at > server_time + CLOCK_SKEW_TOLERANCE_MS:
-        return Rejected(id=row.id, reason="clock_skew"), next_seq
+        return Rejected(id=row.id, reason="clock_skew"), next_seq, []
 
-    existing = (
+    exists = (
         await db.execute(
-            text(
-                "SELECT updated_at, updated_by_device_id FROM items "
-                "WHERE firm_id = :firm_id AND id = :id"
-            ),
+            text("SELECT 1 FROM items WHERE firm_id = :firm_id AND id = :id"),
             {"firm_id": firm_id, "id": row.id},
         )
     ).one_or_none()
 
-    if existing is None:
+    if exists is None:
         await db.execute(
             text(
                 "INSERT INTO items (id, firm_id, " + ", ".join(ITEM_COLUMNS) + ") "
@@ -154,33 +221,122 @@ async def _push_item_row(
             ),
             {"id": row.id, "firm_id": firm_id, **row.data},
         )
-    else:
-        incoming_key = (updated_at, str(row.data.get("updated_by_device_id")))
-        existing_key = (existing.updated_at, str(existing.updated_by_device_id))
-        if incoming_key <= existing_key:
-            # older or identical: the write already happened (or lost to a
-            # race) — ack it so the device's outbox stops retrying, but the
-            # row itself is untouched. The device learns the real current
-            # state on its next pull.
-            return Accepted(id=row.id, updated_at=updated_at), next_seq
+        await _record_sync_change(
+            db,
+            firm_id=firm_id,
+            seq=next_seq,
+            table_name="items",
+            row_id=row.id,
+            changed_at=server_time,
+        )
+        return Accepted(id=row.id, updated_at=updated_at), next_seq + 1, []
+
+    outcome, next_seq = await _newer_write_or_ack(
+        db,
+        table_name="items",
+        columns=ITEM_COLUMNS,
+        firm_id=firm_id,
+        row=row,
+        server_time=server_time,
+        next_seq=next_seq,
+        updated_at=updated_at,
+    )
+    return outcome, next_seq, []
+
+
+async def _push_customer_row(
+    db: AsyncSession, *, firm_id: str, row: PushRow, server_time: int, next_seq: int
+) -> tuple[Accepted | Rejected, int, list[Rewrite]]:
+    """Unseen customers get one extra check items don't need: a phone that
+    already belongs to another live customer in the firm. Same name too →
+    auto-merge (the incoming row is never created; a Rewrite tells the
+    device to use the existing id instead). Different name → both rows are
+    kept, flagged needs_review, for a person to sort out later
+    (docs/design-spec.md Section 4 step 3).
+    """
+    updated_at = row.data.get("updated_at")
+    if not isinstance(updated_at, int):
+        return Rejected(id=row.id, reason="invalid"), next_seq, []
+    if updated_at > server_time + CLOCK_SKEW_TOLERANCE_MS:
+        return Rejected(id=row.id, reason="clock_skew"), next_seq, []
+
+    exists = (
         await db.execute(
-            text(
-                "UPDATE items SET "
-                + ", ".join(f"{c} = :{c}" for c in ITEM_COLUMNS if c != "created_by_user_id")
-                + " WHERE firm_id = :firm_id AND id = :id"
-            ),
-            {"id": row.id, "firm_id": firm_id, **row.data},
+            text("SELECT 1 FROM customers WHERE firm_id = :firm_id AND id = :id"),
+            {"firm_id": firm_id, "id": row.id},
+        )
+    ).one_or_none()
+
+    if exists is not None:
+        outcome, next_seq = await _newer_write_or_ack(
+            db,
+            table_name="customers",
+            columns=CUSTOMER_COLUMNS,
+            firm_id=firm_id,
+            row=row,
+            server_time=server_time,
+            next_seq=next_seq,
+            updated_at=updated_at,
+        )
+        return outcome, next_seq, []
+
+    phone_normalized = row.data.get("phone_normalized")
+    match = None
+    if phone_normalized:
+        match = (
+            await db.execute(
+                text(
+                    "SELECT id, name_normalized FROM customers "
+                    "WHERE firm_id = :firm_id AND phone_normalized = :phone "
+                    "AND deleted_at IS NULL AND merged_into_id IS NULL"
+                ),
+                {"firm_id": firm_id, "phone": phone_normalized},
+            )
+        ).one_or_none()
+
+    if match is not None and match.name_normalized == row.data.get("name_normalized"):
+        return (
+            Accepted(id=row.id, updated_at=updated_at),
+            next_seq,
+            [Rewrite(old_id=row.id, new_id=str(match.id))],
         )
 
+    insert_data = dict(row.data)
+    if match is not None:
+        insert_data["needs_review"] = True
+    await db.execute(
+        text(
+            "INSERT INTO customers (id, firm_id, " + ", ".join(CUSTOMER_COLUMNS) + ") "
+            "VALUES (:id, :firm_id, " + ", ".join(f":{c}" for c in CUSTOMER_COLUMNS) + ")"
+        ),
+        {"id": row.id, "firm_id": firm_id, **insert_data},
+    )
     await _record_sync_change(
         db,
         firm_id=firm_id,
         seq=next_seq,
-        table_name="items",
+        table_name="customers",
         row_id=row.id,
         changed_at=server_time,
     )
-    return Accepted(id=row.id, updated_at=updated_at), next_seq + 1
+    next_seq += 1
+
+    if match is not None:
+        await db.execute(
+            text("UPDATE customers SET needs_review = true WHERE id = :id"),
+            {"id": match.id},
+        )
+        await _record_sync_change(
+            db,
+            firm_id=firm_id,
+            seq=next_seq,
+            table_name="customers",
+            row_id=str(match.id),
+            changed_at=server_time,
+        )
+        next_seq += 1
+
+    return Accepted(id=row.id, updated_at=updated_at), next_seq, []
 
 
 @router.post("/push", response_model=PushResponse)
@@ -192,23 +348,35 @@ async def push(
     server_time = int(time.time() * 1000)
     accepted: list[Accepted] = []
     rejected: list[Rejected] = []
-    next_seq = await _reserve_sequence_block(db, firm_id, len(body.rows))
+    rewrites: list[Rewrite] = []
+    # A customer row can consume two sequence numbers (itself + the existing
+    # phone match it flags needs_review on), so the reserved block is sized
+    # for that worst case; any unused numbers are harmless gaps.
+    next_seq = await _reserve_sequence_block(db, firm_id, len(body.rows) * 2)
 
     for row in body.rows:
+        row_rewrites: list[Rewrite] = []
         try:
             async with db.begin_nested():
-                if row.table != "items":
-                    outcome: Accepted | Rejected = Rejected(id=row.id, reason="unsupported_table")
-                else:
-                    outcome, next_seq = await _push_item_row(
+                if row.table == "items":
+                    outcome, next_seq, row_rewrites = await _push_item_row(
                         db, firm_id=firm_id, row=row, server_time=server_time, next_seq=next_seq
                     )
+                elif row.table == "customers":
+                    outcome, next_seq, row_rewrites = await _push_customer_row(
+                        db, firm_id=firm_id, row=row, server_time=server_time, next_seq=next_seq
+                    )
+                else:
+                    outcome = Rejected(id=row.id, reason="unsupported_table")
         except IntegrityError:
             outcome = Rejected(id=row.id, reason="invalid")
         (accepted if isinstance(outcome, Accepted) else rejected).append(outcome)
+        rewrites.extend(row_rewrites)
 
     await db.commit()
-    return PushResponse(accepted=accepted, rejected=rejected, server_time=server_time)
+    return PushResponse(
+        accepted=accepted, rejected=rejected, rewrites=rewrites, server_time=server_time
+    )
 
 
 class PullRow(BaseModel):
@@ -225,7 +393,7 @@ class PullResponse(BaseModel):
 
 # table_name -> the SELECT list for its "current row" lookup on pull. Same
 # restriction as push: only items is wired up so far.
-TABLE_COLUMNS = {"items": ITEM_COLUMNS}
+TABLE_COLUMNS = {"items": ITEM_COLUMNS, "customers": CUSTOMER_COLUMNS}
 
 
 @router.get("/pull", response_model=PullResponse)

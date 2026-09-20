@@ -5,6 +5,7 @@ from httpx import AsyncClient
 
 from tests.test_auth import _register_body
 from tests.test_sync_push import _auth_headers, _item_row, _registered_session
+from tests.test_sync_push_customers import _customer_row
 
 OTHER_DEVICE = str(uuid.uuid4())
 
@@ -179,3 +180,22 @@ async def test_pull_only_returns_the_callers_own_firm(client: AsyncClient) -> No
     response = await client.get("/sync/pull", headers=_auth_headers(session_a), params={"since": 0})
 
     assert [r["id"] for r in response.json()["rows"]] == [row_a["id"]]
+
+
+async def test_pull_returns_customers_too(client: AsyncClient) -> None:
+    session = await _registered_session(client)
+    now = int(time.time() * 1000)
+    row = _customer_row(
+        name="Rashid Traders",
+        phone="923001234567",
+        updated_at=now,
+        created_by_user_id=session["user"]["id"],
+    )
+    await _push(client, session, row)
+
+    response = await client.get("/sync/pull", headers=_auth_headers(session), params={"since": 0})
+
+    body = response.json()
+    assert len(body["rows"]) == 1
+    assert body["rows"][0]["table"] == "customers"
+    assert body["rows"][0]["data"]["name"] == "Rashid Traders"

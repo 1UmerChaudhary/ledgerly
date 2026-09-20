@@ -30,16 +30,24 @@ Built so far, all TDD'd against a real Postgres testcontainer (no mocked databas
   not the distinct rows returned (a row that changed many times still costs one output row, but
   can still fill most of a page by itself); `next_cursor` is always the highest raw sequence
   number actually read, so a page can never skip an entry that landed between two deduplicated
-  rows.
-- Schema: `firms`, `users`, `firm_members`, `devices`, `refresh_tokens`, `items`, `sync_changes`
-  (Alembic migrations under `migrations/versions/`, hand-written — no autogenerate, same
-  discipline as the SQLite side).
+  rows. Both `items` and `customers` are wired up.
+- Customers get one extra push rule items don't need: an unseen row whose phone matches an
+  existing *live* customer in the firm is still accepted, not rejected — same name too →
+  auto-merged (the incoming row is never created; a `rewrite` in the push response tells the
+  device to use the existing id instead), different name → both rows kept and flagged
+  `needs_review` for a person to sort out later. The server's `customers` table deliberately has
+  no hard uniqueness constraint on phone (unlike the device's SQLite copy, which blocks a
+  duplicate at creation time) — the whole point of `needs_review` is letting two rows share a
+  phone until it's resolved; a hard constraint would make that impossible.
+- Schema: `firms`, `users`, `firm_members`, `devices`, `refresh_tokens`, `items`, `customers`,
+  `sync_changes` (Alembic migrations under `migrations/versions/`, hand-written — no
+  autogenerate, same discipline as the SQLite side).
 
-Not built yet: `/auth/google`, and push/pull support for every table besides `items` (customers,
-transactions — the bill-as-unit case, customer dedup/merge, tombstone un-delete — per
-`docs/design-spec.md` Section 4 step 3). Row Level Security is deferred until there's a real
-non-superuser app role to enforce it against (see the first migration's docstring). Deployment
-to Cloud Run hasn't started.
+Not built yet: `/auth/google`, and push/pull support for `transactions` (the bill-as-unit case:
+header + lines together, `transaction_history` for edit/delete, tombstoned-customer
+un-delete — per `docs/design-spec.md` Section 4 step 3). Row Level Security is deferred until
+there's a real non-superuser app role to enforce it against (see the first migration's
+docstring). Deployment to Cloud Run hasn't started.
 
 ## Working on it locally
 
