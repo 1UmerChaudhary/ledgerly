@@ -114,6 +114,20 @@ Future<void> seedWithOneBill(AppDatabase db, DeviceContext ctx) async {
 }
 
 void main() {
+  testWidgets('ledger screen renders without overflow at phone width', (
+    tester,
+  ) async {
+    await pumpLedgerly(
+      tester,
+      seed: seedWithOneBill,
+      viewSize: const Size(390, 844),
+    );
+    await tester.tap(find.text('Test Customer')); // navigate into the ledger
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+  }, variant: phoneOnly);
+
   testWidgets(
     'at phone width, tapping a ledger row pushes a detail screen instead of showing a side panel',
     (tester) async {
@@ -127,29 +141,14 @@ void main() {
 
       expect(find.byKey(const Key('ledger.detailPanel')), findsNothing);
 
-      // Scoped to the ledger table itself: at phone width the shell's own
-      // back button also renders via InkWell and precedes the table in the
-      // tree, so an unscoped find.byType(InkWell).first hits the back
-      // button instead of a row.
-      await tester.tap(
-        find
-            .descendant(
-              of: find.byKey(const Key('ledger.table')),
-              matching: find.byType(InkWell),
-            )
-            .first,
-      ); // first ledger row
+      // Below kCompactBreakpoint, entries render as _LedgerTable's compact
+      // card list rather than the desktop table, each row keyed by index.
+      await tester.tap(find.byKey(const Key('ledger.compactRow.0')));
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('ledger.detailPanel')), findsOneWidget);
       expect(find.byKey(const Key('shell.backButton')), findsOneWidget);
-
-      // The ledger's header row and `_LedgerTable`'s fixed desktop column
-      // widths overflow at phone width — a pre-existing gap this task's
-      // brief doesn't cover (only the row-tap → detail-route behavior
-      // above is in scope here); draining rather than asserting isNull so
-      // this test isn't blocked on that separate redesign.
-      while (tester.takeException() != null) {}
+      expect(tester.takeException(), isNull);
     },
     variant: phoneOnly,
   );

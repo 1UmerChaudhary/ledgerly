@@ -214,9 +214,124 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
     return KeyEventResult.ignored;
   }
 
+  /// "CUSTOMER" label + name/phone — identical widget subtree in both the
+  /// wide header Row and the compact header Column below.
+  Widget _customerInfo(Customer? customer) {
+    final c = context.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'CUSTOMER',
+          style: TextStyle(
+            fontSize: 11,
+            letterSpacing: 1,
+            fontWeight: FontWeight.w600,
+            color: c.ink3,
+          ),
+        ),
+        Row(
+          children: [
+            Text(
+              customer?.name ?? '',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+            if (customer?.phone case final p?) ...[
+              const SizedBox(width: 10),
+              Text(p, style: numberStyle.copyWith(fontSize: 13, color: c.ink3)),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// The "show deleted" checkbox + label — identical in both header layouts.
+  Widget _showDeletedToggle() {
+    final c = context.colors;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Checkbox(
+          key: const Key('ledger.showDeleted'),
+          value: _showDeleted,
+          onChanged: (v) => setState(() {
+            _showDeleted = v ?? false;
+            _selected = null;
+            _selectedHistoryVersion = null;
+          }),
+        ),
+        Text('Show deleted', style: TextStyle(fontSize: 12.5, color: c.ink2)),
+      ],
+    );
+  }
+
+  /// "OWES"/"IS OWED" label + amount — identical in both header layouts.
+  Widget _balanceInfo(Money balance, {required CrossAxisAlignment align}) {
+    final c = context.colors;
+    return Column(
+      crossAxisAlignment: align,
+      children: [
+        Text(
+          balance.isNegative ? 'IS OWED' : 'OWES',
+          style: TextStyle(
+            fontSize: 11,
+            letterSpacing: 1,
+            fontWeight: FontWeight.w600,
+            color: balance.isNegative ? c.giveable : c.receivable,
+          ),
+        ),
+        Text(
+          formatMoney(balance.abs()),
+          style: numberStyle.copyWith(
+            fontSize: 22,
+            color: balance.isNegative ? c.giveable : c.receivable,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Above [kCompactBreakpoint] this Row is unchanged from before the phone
+  /// redesign. Below it, the same three pieces above stack into a Column —
+  /// side by side they want ~420px against a ~346px content width, which is
+  /// exactly the RenderFlex overflow this fixes. The balance/toggle line
+  /// uses Wrap (not Row+Spacer): their intrinsic widths together are close
+  /// enough to the viewport that a longer customer phone number or a wider
+  /// system font can still push them over a fixed Row, whereas Wrap just
+  /// drops the toggle to its own line instead of overflowing.
+  Widget _buildHeader(Customer? customer, Money balance, bool compact) {
+    if (compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _customerInfo(customer),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 16,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _balanceInfo(balance, align: CrossAxisAlignment.start),
+              _showDeletedToggle(),
+            ],
+          ),
+        ],
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(child: _customerInfo(customer)),
+        _showDeletedToggle(),
+        const SizedBox(width: 18),
+        _balanceInfo(balance, align: CrossAxisAlignment.end),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final c = context.colors;
     final customer = ref.watch(customerProvider(widget.customerId)).value;
     final entries =
         ref
@@ -238,6 +353,10 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
         Money.zero;
     final selectedIndex = entries.isEmpty ? 0 : _effective(entries);
     final selected = entries.isEmpty ? null : entries[selectedIndex];
+    // Single source of truth for this whole screen's phone/desktop split —
+    // the header, the side panel's visibility, and the table's row layout
+    // all key off this one flag instead of each re-measuring independently.
+    final compact = MediaQuery.of(context).size.width < kCompactBreakpoint;
 
     return Focus(
       focusNode: _focus,
@@ -249,87 +368,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'CUSTOMER',
-                        style: TextStyle(
-                          fontSize: 11,
-                          letterSpacing: 1,
-                          fontWeight: FontWeight.w600,
-                          color: c.ink3,
-                        ),
-                      ),
-                      Row(
-                        children: [
-                          Text(
-                            customer?.name ?? '',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          if (customer?.phone case final p?) ...[
-                            const SizedBox(width: 10),
-                            Text(
-                              p,
-                              style: numberStyle.copyWith(
-                                fontSize: 13,
-                                color: c.ink3,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                Row(
-                  children: [
-                    Checkbox(
-                      key: const Key('ledger.showDeleted'),
-                      value: _showDeleted,
-                      onChanged: (v) => setState(() {
-                        _showDeleted = v ?? false;
-                        _selected = null;
-                        _selectedHistoryVersion = null;
-                      }),
-                    ),
-                    Text(
-                      'Show deleted',
-                      style: TextStyle(fontSize: 12.5, color: c.ink2),
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 18),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      balance.isNegative ? 'IS OWED' : 'OWES',
-                      style: TextStyle(
-                        fontSize: 11,
-                        letterSpacing: 1,
-                        fontWeight: FontWeight.w600,
-                        color: balance.isNegative ? c.giveable : c.receivable,
-                      ),
-                    ),
-                    Text(
-                      formatMoney(balance.abs()),
-                      style: numberStyle.copyWith(
-                        fontSize: 22,
-                        color: balance.isNegative ? c.giveable : c.receivable,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+            _buildHeader(customer, balance, compact),
             const SizedBox(height: 14),
             Expanded(
               child: Row(
@@ -339,10 +378,8 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                     child: _LedgerTable(
                       entries: entries,
                       selected: selectedIndex,
+                      compact: compact,
                       onTap: (i) {
-                        final compact =
-                            MediaQuery.of(context).size.width <
-                            kCompactBreakpoint;
                         if (compact) {
                           context.go(
                             '/customers/${widget.customerId}/bills/${entries[i].bill.id}',
@@ -353,8 +390,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                       },
                     ),
                   ),
-                  if (MediaQuery.of(context).size.width >=
-                      kCompactBreakpoint) ...[
+                  if (!compact) ...[
                     const SizedBox(width: 16),
                     SizedBox(
                       width: 340,
@@ -384,10 +420,16 @@ class _LedgerTable extends StatelessWidget {
     required this.entries,
     required this.selected,
     required this.onTap,
+    required this.compact,
   });
   final List<LedgerEntry> entries;
   final int selected;
   final void Function(int) onTap;
+
+  /// Chosen once, by [_LedgerScreenState.build], off the whole screen's
+  /// width — not re-measured locally — so this table's row layout never
+  /// disagrees with the header/side-panel split rendered above and beside it.
+  final bool compact;
 
   static const _cols = <(String, int, bool)>[
     ('Date', 80, false),
@@ -400,7 +442,172 @@ class _LedgerTable extends StatelessWidget {
   ];
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      compact ? _buildCompact(context) : _buildWide(context);
+
+  /// Below [kCompactBreakpoint]: the fixed pixel columns below (680px+
+  /// before Description even gets a share) can't fit a ~350px phone
+  /// viewport, so each entry becomes a tappable card instead of a table
+  /// row — same tap target semantics (`onTap(i)`), same fields, stacked.
+  Widget _buildCompact(BuildContext context) {
+    final c = context.colors;
+    return Container(
+      key: const Key('ledger.compactList'),
+      decoration: BoxDecoration(
+        border: Border.all(color: c.rule),
+        borderRadius: BorderRadius.circular(4),
+        color: c.surface,
+      ),
+      child: ListView.builder(
+        itemCount: entries.length,
+        itemBuilder: (context, i) {
+          final e = entries[i];
+          final deleted = e.bill.deleted;
+          final signed = e.bill.signedAmount;
+          final isSel = i == selected;
+          final rowColor = deleted ? c.ink3 : c.ink;
+          return InkWell(
+            key: Key('ledger.compactRow.$i'),
+            onTap: () => onTap(i),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: isSel ? c.selection : null,
+                border: Border(
+                  left: BorderSide(
+                    color: isSel ? c.accent : Colors.transparent,
+                    width: 3,
+                  ),
+                  bottom: BorderSide(color: c.ruleSoft),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        shortDate(e.bill.entryDate),
+                        style: numberStyle.copyWith(
+                          fontSize: 12.5,
+                          color: rowColor,
+                        ),
+                      ),
+                      if (e.bill.displayNo case final no?) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          no,
+                          style: numberStyle.copyWith(
+                            fontSize: 12,
+                            color: c.ink2,
+                          ),
+                        ),
+                      ],
+                      const Spacer(),
+                      Text(
+                        e.runningBalance == null
+                            ? '—'
+                            : formatMoney(
+                                e.runningBalance!.abs(),
+                                symbol: false,
+                              ),
+                        style: numberStyle.copyWith(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: e.runningBalance == null
+                              ? c.ink3
+                              : (e.runningBalance!.isNegative
+                                    ? c.giveable
+                                    : c.ink),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          transactionTypeLabel(e.bill.type),
+                          key: const Key('ledger.row.type'),
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            color: rowColor,
+                            decoration: deleted
+                                ? TextDecoration.lineThrough
+                                : null,
+                          ),
+                        ),
+                      ),
+                      if (deleted) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: c.giveableSoft,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                          child: Text(
+                            'deleted',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: c.giveable,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ] else if (e.bill.version > 1) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: c.accentSoft,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                          child: Text(
+                            'edited',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: c.accent,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if (e.bill.description case final d?) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      d,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12.5, color: c.ink2),
+                    ),
+                  ],
+                  const SizedBox(height: 4),
+                  Text(
+                    signed.isPositive
+                        ? 'Debit ${formatMoney(signed, symbol: false)}'
+                        : 'Credit ${formatMoney(-signed, symbol: false)}',
+                    style: numberStyle.copyWith(fontSize: 13, color: rowColor),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildWide(BuildContext context) {
     final c = context.colors;
     Widget cellBox(int w, Widget child) => w == 0
         ? Expanded(child: child)
