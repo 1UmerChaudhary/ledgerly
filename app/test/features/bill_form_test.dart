@@ -48,6 +48,17 @@ Future<void> seedFirmOnly(AppDatabase db, DeviceContext ctx) async {
   await FirmSetup(db, ctx).createFirm(name: 'Test Firm', contactNumber: '0300');
 }
 
+// Same bare firm, plus one item with a default bag weight — for the
+// LineCard item-pick test, which needs something with a default to auto-fill.
+Future<void> seedFirmWithItem(AppDatabase db, DeviceContext ctx) async {
+  await FirmSetup(db, ctx).createFirm(name: 'Test Firm', contactNumber: '0300');
+  await ItemsRepository(db, ctx).create(
+    name: 'Oil',
+    defaultBagWeight: Weight.kg(16),
+    defaultRateBase: RateBase.maund,
+  );
+}
+
 Future<void> typeInto(WidgetTester tester, Key key, String text) async {
   await tester.tap(find.byKey(key));
   await tester.pump();
@@ -215,4 +226,54 @@ void main() {
 
     expect(find.byKey(const Key('bill.line.1.card')), findsNothing);
   }, variant: phoneOnly);
+
+  testWidgets(
+    'tapping the mode toggle flips bags to weight, and offers only two segments',
+    (tester) async {
+      await pumpLedgerly(
+        tester,
+        seed: seedFirmOnly,
+        viewSize: const Size(390, 844),
+      );
+      await tester.tap(find.byKey(const Key('shell.fab.newSale')));
+      await tester.pumpAndSettle();
+
+      // Phase 5's byCount is not wired into any UI yet (see bill_draft.dart's
+      // toggleMode, which only flips bags<->weight) — the card must not offer
+      // a third option the rest of the app doesn't expose.
+      expect(find.text('Count'), findsNothing);
+      expect(find.byKey(const Key('bill.line.0.card.bags')), findsOneWidget);
+      expect(find.byKey(const Key('bill.line.0.card.totalKg')), findsNothing);
+
+      await tester.tap(find.text('Weight'));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('bill.line.0.card.bags')), findsNothing);
+      expect(find.byKey(const Key('bill.line.0.card.totalKg')), findsOneWidget);
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'picking an item with a default bag weight fills the bag-weight field on screen',
+    (tester) async {
+      await pumpLedgerly(
+        tester,
+        seed: seedFirmWithItem,
+        viewSize: const Size(390, 844),
+      );
+      await tester.tap(find.byKey(const Key('shell.fab.newSale')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('bill.line.0.card.itemButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Oil'));
+      await tester.pumpAndSettle();
+
+      // The default bag weight (16kg) must actually render, not just update
+      // LineDraft state underneath a stale TextFormField(initialValue:).
+      expect(find.text('16.000'), findsOneWidget);
+    },
+    variant: phoneOnly,
+  );
 }

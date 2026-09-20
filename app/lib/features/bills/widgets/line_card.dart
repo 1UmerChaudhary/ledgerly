@@ -57,12 +57,14 @@ class LineCard extends StatelessWidget {
                 ),
               ],
             ),
+            // Bags/Weight only — byCount is a phase-5 placeholder not wired
+            // into any UI yet (desktop's _ModeCell doesn't offer it either,
+            // and BillDraftController.toggleMode only flips bags<->weight).
             SegmentedButton<SaleMode>(
               key: Key('bill.line.$index.card.modeToggle'),
               segments: const [
                 ButtonSegment(value: SaleMode.byBags, label: Text('Bags')),
                 ButtonSegment(value: SaleMode.byWeight, label: Text('Weight')),
-                ButtonSegment(value: SaleMode.byCount, label: Text('Count')),
               ],
               selected: {line.mode},
               onSelectionChanged: (_) => onToggleMode(),
@@ -94,12 +96,64 @@ class LineCard extends StatelessWidget {
   }
 
   Widget _numberField(String field, String label, String value) {
-    return TextFormField(
-      key: Key('bill.line.$index.card.$field'),
-      initialValue: value,
-      decoration: InputDecoration(labelText: label),
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+    return _LineCardNumberField(
+      fieldKey: Key('bill.line.$index.card.$field'),
+      label: label,
+      value: value,
       onChanged: (v) => onEdit(field, v),
     );
   }
+}
+
+/// Same fix as the desktop grid's `_CellField` (bill_screen.dart): a plain
+/// `TextFormField(initialValue: ...)` only honours `initialValue` on first
+/// build, so an external change (e.g. pickItem auto-filling bagKg from the
+/// item's default) never reaches the screen even though [LineDraft] state is
+/// correct underneath. Retaining the controller and pushing external value
+/// changes into it in [didUpdateWidget] mirrors `_CellField`'s pattern
+/// exactly.
+class _LineCardNumberField extends StatefulWidget {
+  const _LineCardNumberField({
+    required this.fieldKey,
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+  final Key fieldKey;
+  final String label;
+  final String value;
+  final void Function(String) onChanged;
+
+  @override
+  State<_LineCardNumberField> createState() => _LineCardNumberFieldState();
+}
+
+class _LineCardNumberFieldState extends State<_LineCardNumberField> {
+  late final _controller = TextEditingController(text: widget.value);
+
+  @override
+  void didUpdateWidget(covariant _LineCardNumberField old) {
+    super.didUpdateWidget(old);
+    if (widget.value != _controller.text) {
+      _controller.value = TextEditingValue(
+        text: widget.value,
+        selection: TextSelection.collapsed(offset: widget.value.length),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => TextField(
+    key: widget.fieldKey,
+    controller: _controller,
+    decoration: InputDecoration(labelText: widget.label),
+    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+    onChanged: widget.onChanged,
+  );
 }
