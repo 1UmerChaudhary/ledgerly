@@ -6,10 +6,12 @@ import 'package:ledgerly_core/ledgerly_core.dart';
 
 import '../../bootstrap/providers.dart';
 import '../../printing/print_actions.dart';
+import '../../shell/breakpoints.dart';
 import '../../theme/ledgerly_theme.dart';
 import 'bill_draft.dart';
 import 'widgets/date_field.dart';
 import 'widgets/entity_autocomplete.dart';
+import 'widgets/line_card.dart';
 
 TransactionType _typeFrom(String s) => switch (s) {
   'purchase' => TransactionType.purchase,
@@ -231,14 +233,40 @@ class _BillScreenState extends ConsumerState<BillScreen> {
                   ),
                   const SizedBox(height: 14),
                   if (d.hasLines)
-                    _LinesGrid(
-                      d: d,
-                      items: items,
-                      focusFor: _focusFor,
-                      onPickItem: _ctl.pickItem,
-                      onEdit: _ctl.editLineField,
-                      onToggleMode: _ctl.toggleMode,
-                      onEnter: (i, f) => _enterOn(i, f, d),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        if (constraints.maxWidth < kCompactBreakpoint) {
+                          return Column(
+                            children: [
+                              for (var i = 0; i < d.lines.length; i++)
+                                LineCard(
+                                  index: i,
+                                  line: d.lines[i],
+                                  items: items,
+                                  onPickItem: (item) => _ctl.pickItem(i, item),
+                                  onEdit: (field, value) =>
+                                      _ctl.editLineField(i, field, value),
+                                  onToggleMode: () => _ctl.toggleMode(i),
+                                  onDelete: () => _ctl.removeLine(i),
+                                ),
+                              TextButton(
+                                key: const Key('bill.line.card.addLine'),
+                                onPressed: () => _ctl.addLine(),
+                                child: const Text('+ Add line'),
+                              ),
+                            ],
+                          );
+                        }
+                        return _LinesGrid(
+                          d: d,
+                          items: items,
+                          focusFor: _focusFor,
+                          onPickItem: _ctl.pickItem,
+                          onEdit: _ctl.editLineField,
+                          onToggleMode: _ctl.toggleMode,
+                          onEnter: (i, f) => _enterOn(i, f, d),
+                        );
+                      },
                     )
                   else
                     _AmountRow(d: d, onAmount: _ctl.setAmount),
@@ -281,6 +309,89 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return constraints.maxWidth < kCompactBreakpoint
+            ? _buildCompact(context)
+            : _buildWide(context);
+      },
+    );
+  }
+
+  /// Below [kCompactBreakpoint] the fixed-width Rows below overflow (customer
+  /// row alone wants ~580px against a ~350px viewport), so fields stack in a
+  /// Column instead and size to whatever width they're given.
+  Widget _buildCompact(BuildContext context) {
+    final c = context.colors;
+    final canWalkIn = d.type == TransactionType.sale;
+    Widget fieldLabel(String t) =>
+        Text(t, style: TextStyle(color: c.ink2, fontSize: 12));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        fieldLabel('Customer'),
+        const SizedBox(height: 4),
+        if (canWalkIn && d.isWalkIn)
+          Text(
+            'Walk-in — a counter sale for cash, not tracked in any customer ledger.',
+            style: TextStyle(fontSize: 13, color: c.ink2),
+          )
+        else
+          EntityAutocomplete<Customer>(
+            fieldKey: const Key('bill.customer'),
+            autofocus: true,
+            options: customers,
+            labelOf: (c) => c.name,
+            selected: d.customer,
+            hint: 'Type a name or phone',
+            onSelected: onCustomer,
+            onSubmittedWithoutOptions: () => FocusScope.of(context).nextFocus(),
+          ),
+        if (!d.isWalkIn && d.customer != null && balance != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              _owesPhrase(balance!),
+              style: numberStyle.copyWith(
+                fontSize: 13,
+                color: balance!.isNegative ? c.giveable : c.receivable,
+              ),
+            ),
+          ),
+        if (canWalkIn)
+          Row(
+            children: [
+              Checkbox(
+                key: const Key('bill.walkIn'),
+                value: d.isWalkIn,
+                onChanged: (v) => onWalkIn(v ?? false),
+              ),
+              Text('Walk-in', style: TextStyle(fontSize: 13, color: c.ink2)),
+            ],
+          ),
+        const SizedBox(height: 12),
+        fieldLabel('Date'),
+        const SizedBox(height: 4),
+        DateField(
+          fieldKey: const Key('bill.date'),
+          iso: d.entryDate,
+          onChanged: onDate,
+        ),
+        const SizedBox(height: 12),
+        fieldLabel('Description'),
+        const SizedBox(height: 4),
+        TextField(
+          key: const Key('bill.description'),
+          onChanged: onDescription,
+          decoration: const InputDecoration(
+            contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWide(BuildContext context) {
     final c = context.colors;
     Widget label(String t) => SizedBox(
       width: 90,

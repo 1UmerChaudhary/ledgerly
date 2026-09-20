@@ -40,6 +40,14 @@ Future<void> seedMill(AppDatabase db, DeviceContext ctx) async {
   );
 }
 
+// A bare firm, no customers/balances — the phone-width tests below only
+// exercise bill_screen.dart's own layout, and a big seeded balance trips an
+// unrelated, pre-existing dashboard_screen.dart overflow at this width (see
+// task-3-report.md), which would otherwise contaminate every assertion here.
+Future<void> seedFirmOnly(AppDatabase db, DeviceContext ctx) async {
+  await FirmSetup(db, ctx).createFirm(name: 'Test Firm', contactNumber: '0300');
+}
+
 Future<void> typeInto(WidgetTester tester, Key key, String text) async {
   await tester.tap(find.byKey(key));
   await tester.pump();
@@ -152,4 +160,59 @@ void main() {
     },
     variant: windowsOnly,
   );
+
+  testWidgets('at phone width, the bill header does not overflow its row', (
+    tester,
+  ) async {
+    await pumpLedgerly(
+      tester,
+      seed: seedFirmOnly,
+      viewSize: const Size(390, 844),
+    );
+    await tester.tap(find.byKey(const Key('shell.fab.newSale')));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+  }, variant: phoneOnly);
+
+  testWidgets(
+    'at phone width, a sale line renders as a touch card, not the grid',
+    (tester) async {
+      await pumpLedgerly(
+        tester,
+        seed: seedFirmOnly,
+        viewSize: const Size(390, 844),
+      );
+      await tester.pumpAndSettle(); // dashboard first at phone width
+      // Navigate to a new sale via the FAB added in Task 2.
+      await tester.tap(find.byKey(const Key('shell.fab.newSale')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('bill.line.0.card')), findsOneWidget);
+      expect(
+        find.byKey(const Key('bill.line.0.card.deleteButton')),
+        findsOneWidget,
+      );
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets('tapping a card delete button removes that line', (tester) async {
+    await pumpLedgerly(
+      tester,
+      seed: seedFirmOnly,
+      viewSize: const Size(390, 844),
+    );
+    await tester.tap(find.byKey(const Key('shell.fab.newSale')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('bill.line.card.addLine')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('bill.line.1.card')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('bill.line.1.card.deleteButton')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('bill.line.1.card')), findsNothing);
+  }, variant: phoneOnly);
 }
