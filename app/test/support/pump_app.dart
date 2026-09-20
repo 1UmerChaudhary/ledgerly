@@ -21,9 +21,9 @@ import 'package:ledgerly/printing/printing_service.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 
 /// Boots the real app against an in-memory database. Use together with
-/// [windowsOnly] so key handling and focus traversal behave as on the target OS. When [seed] is given it
+/// [windowsOnly] or [phoneOnly] so key handling and focus traversal behave as on the target OS. When [seed] is given it
 /// runs before the first frame with an already-created firm, so the app opens
-/// on the dashboard instead of the setup screen.
+/// on the dashboard instead of the setup screen. [viewSize] sets the logical viewport size; defaults to desktop dimensions (1280×800).
 Future<ProviderContainer> pumpLedgerly(
   WidgetTester tester, {
   Future<void> Function(AppDatabase db, DeviceContext ctx)? seed,

@@ -199,7 +199,14 @@ void main() {
   testWidgets('dashboard renders at phone width without the desktop rail', (
     tester,
   ) async {
-    await pumpLedgerly(tester, viewSize: const Size(390, 844));
+    await pumpLedgerly(
+      tester,
+      seed: (db, ctx) async {
+        await FirmSetup(db, ctx)
+            .createFirm(name: 'Test Firm', contactNumber: '0300');
+      },
+      viewSize: const Size(390, 844),
+    );
 
     expect(find.byKey(const Key('shell.bottomNav')), findsOneWidget);
   }, variant: phoneOnly);
