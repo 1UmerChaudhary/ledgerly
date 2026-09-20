@@ -6,6 +6,7 @@ from httpx import AsyncClient
 from tests.test_auth import _register_body
 from tests.test_sync_push import _auth_headers, _item_row, _registered_session
 from tests.test_sync_push_customers import _customer_row
+from tests.test_sync_push_transactions import _sale_row, _seed_item
 
 OTHER_DEVICE = str(uuid.uuid4())
 
@@ -199,3 +200,29 @@ async def test_pull_returns_customers_too(client: AsyncClient) -> None:
     assert len(body["rows"]) == 1
     assert body["rows"][0]["table"] == "customers"
     assert body["rows"][0]["data"]["name"] == "Rashid Traders"
+
+
+async def test_pull_returns_a_transaction_with_its_lines(client: AsyncClient) -> None:
+    session = await _registered_session(client)
+    item_id = await _seed_item(client, session)
+    now = int(time.time() * 1000)
+    row = _sale_row(
+        row_id=None,
+        item_id=item_id,
+        updated_at=now,
+        device_id=OTHER_DEVICE,
+        user_id=session["user"]["id"],
+    )
+    await _push(client, session, row)
+
+    response = await client.get("/sync/pull", headers=_auth_headers(session), params={"since": 0})
+
+    body = response.json()
+    # the item's own insert is one sync_changes row too
+    transaction_rows = [r for r in body["rows"] if r["table"] == "transactions"]
+    assert len(transaction_rows) == 1
+    pulled = transaction_rows[0]
+    assert pulled["id"] == row["id"]
+    assert pulled["data"]["final_amount"] == 1000
+    assert len(pulled["data"]["lines"]) == 1
+    assert pulled["data"]["lines"][0]["item_id"] == item_id

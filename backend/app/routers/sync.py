@@ -1,4 +1,6 @@
+import json
 import time
+import uuid as uuid_module
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
@@ -45,6 +47,54 @@ CUSTOMER_COLUMNS = (
     "updated_by_device_id",
     "deleted_at",
 )
+
+# A bill's header columns (its lines live in TRANSACTION_LINE_COLUMNS,
+# always sent and replaced together — see docs/design-spec.md Section 2,
+# "lines travel inside their bill; pull = DELETE all + INSERT the ids
+# carried in the payload"). signed_amount is generated, never written.
+TRANSACTION_COLUMNS = (
+    "customer_id",
+    "device_short_code",
+    "display_seq",
+    "type",
+    "entry_date",
+    "description",
+    "version",
+    "calculated_total",
+    "overridden_total",
+    "overridden_total_basis",
+    "final_amount",
+    "created_by_user_id",
+    "updated_by_user_id",
+    "created_at",
+    "updated_at",
+    "updated_by_device_id",
+    "deleted_at",
+)
+
+# A line's own columns, excluding id/firm_id/transaction_id (supplied
+# separately) and calculated_total/final_amount (generated).
+TRANSACTION_LINE_COLUMNS = (
+    "id",
+    "line_no",
+    "item_id",
+    "uom",
+    "sale_mode",
+    "bag_count",
+    "bag_weight_g",
+    "total_weight_g",
+    "quantity",
+    "rate_paisa",
+    "rate_base_weight_g",
+    "overridden_total",
+)
+
+# Fixed namespace for transaction_history's deterministic id: uuid5 of
+# (transaction_id, loser's updated_at, loser's device), so the same losing
+# version discovered by more than one push collides into a single row
+# instead of duplicating (docs/design-spec.md Section 2). The exact value
+# doesn't matter, only that it never changes.
+HISTORY_NAMESPACE = uuid_module.UUID("6f6e1c4a-6b8a-4b1a-9c1a-2f6b7a8c9d0e")
 
 
 class TimeResponse(BaseModel):
@@ -339,6 +389,220 @@ async def _push_customer_row(
     return Accepted(id=row.id, updated_at=updated_at), next_seq, []
 
 
+def _history_id(transaction_id: str, loser_updated_at: int, loser_device_id: str) -> str:
+    name = f"{transaction_id}:{loser_updated_at}:{loser_device_id}"
+    return str(uuid_module.uuid5(HISTORY_NAMESPACE, name))
+
+
+async def _insert_lines(
+    db: AsyncSession, *, firm_id: str, transaction_id: str, lines: list[dict[str, Any]]
+) -> None:
+    for line in lines:
+        await db.execute(
+            text(
+                "INSERT INTO transaction_lines (firm_id, transaction_id, "
+                + ", ".join(TRANSACTION_LINE_COLUMNS)
+                + ") VALUES (:firm_id, :transaction_id, "
+                + ", ".join(f":{c}" for c in TRANSACTION_LINE_COLUMNS)
+                + ")"
+            ),
+            {"firm_id": firm_id, "transaction_id": transaction_id, **line},
+        )
+
+
+async def _replace_lines(
+    db: AsyncSession, *, firm_id: str, transaction_id: str, lines: list[dict[str, Any]]
+) -> None:
+    await db.execute(
+        text("DELETE FROM transaction_lines WHERE firm_id = :firm_id AND transaction_id = :id"),
+        {"firm_id": firm_id, "id": transaction_id},
+    )
+    await _insert_lines(db, firm_id=firm_id, transaction_id=transaction_id, lines=lines)
+
+
+async def _current_snapshot(db: AsyncSession, *, firm_id: str, transaction_id: str) -> dict:
+    """{header, lines} as they stand in the database right now — used to
+    archive the LOSING side of a conflict just before it's overwritten.
+    """
+    header = (
+        (
+            await db.execute(
+                text(
+                    f"SELECT id, {', '.join(TRANSACTION_COLUMNS)} FROM transactions "
+                    "WHERE firm_id = :firm_id AND id = :id"
+                ),
+                {"firm_id": firm_id, "id": transaction_id},
+            )
+        )
+        .mappings()
+        .one()
+    )
+    lines = (
+        (
+            await db.execute(
+                text(
+                    f"SELECT {', '.join(TRANSACTION_LINE_COLUMNS)} FROM transaction_lines "
+                    "WHERE firm_id = :firm_id AND transaction_id = :id ORDER BY line_no"
+                ),
+                {"firm_id": firm_id, "id": transaction_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return {"schema_version": 1, "header": dict(header), "lines": [dict(line) for line in lines]}
+
+
+async def _record_history(
+    db: AsyncSession,
+    *,
+    firm_id: str,
+    transaction_id: str,
+    version: int,
+    snapshot: dict,
+    changed_at: int,
+    changed_by_user_id: str,
+    changed_by_device_id: str,
+    history_id: str,
+) -> None:
+    # ON CONFLICT DO NOTHING: the deterministic id means a repeat discovery
+    # of the same losing version (e.g. the same stale row pushed twice)
+    # collides into the one row instead of duplicating it.
+    await db.execute(
+        text(
+            """
+            INSERT INTO transaction_history
+                (id, firm_id, transaction_id, version, snapshot, reason, changed_at,
+                 changed_by_user_id, changed_by_device_id)
+            VALUES
+                (:id, :firm_id, :transaction_id, :version, CAST(:snapshot AS jsonb),
+                 'sync_overwrite', :changed_at, :changed_by_user_id, :changed_by_device_id)
+            ON CONFLICT (id) DO NOTHING
+            """
+        ),
+        {
+            "id": history_id,
+            "firm_id": firm_id,
+            "transaction_id": transaction_id,
+            "version": version,
+            "snapshot": json.dumps(snapshot, default=str),
+            "changed_at": changed_at,
+            "changed_by_user_id": changed_by_user_id,
+            "changed_by_device_id": changed_by_device_id,
+        },
+    )
+
+
+async def _push_transaction_row(
+    db: AsyncSession, *, firm_id: str, row: PushRow, server_time: int, next_seq: int
+) -> tuple[Accepted | Rejected, int, list[Rewrite]]:
+    """A bill is header + lines together, always replaced wholesale — never
+    diffed line by line (docs/design-spec.md Section 2). Unlike items and
+    customers, a losing write here is never silently dropped: it's archived
+    to transaction_history first, on whichever side loses (see
+    `_history_id`'s docstring on the module-level constant for why the
+    archived id is deterministic rather than a fresh uuid each time).
+
+    Not yet built: transaction_history isn't itself pushed/pulled (so a
+    conflict's loser is visible to this device but not synced to others
+    yet), and there's no handling for a bill referencing a tombstoned or
+    merged customer (docs/design-spec.md Section 4 step 3).
+    """
+    updated_at = row.data.get("updated_at")
+    lines = row.data.get("lines")
+    if not isinstance(updated_at, int) or not isinstance(lines, list):
+        return Rejected(id=row.id, reason="invalid"), next_seq, []
+    if updated_at > server_time + CLOCK_SKEW_TOLERANCE_MS:
+        return Rejected(id=row.id, reason="clock_skew"), next_seq, []
+
+    header_data = {k: v for k, v in row.data.items() if k != "lines"}
+
+    existing = (
+        await db.execute(
+            text(
+                "SELECT updated_at, updated_by_device_id, version FROM transactions "
+                "WHERE firm_id = :firm_id AND id = :id"
+            ),
+            {"firm_id": firm_id, "id": row.id},
+        )
+    ).one_or_none()
+
+    if existing is None:
+        await db.execute(
+            text(
+                "INSERT INTO transactions (id, firm_id, "
+                + ", ".join(TRANSACTION_COLUMNS)
+                + ") VALUES (:id, :firm_id, "
+                + ", ".join(f":{c}" for c in TRANSACTION_COLUMNS)
+                + ")"
+            ),
+            {"id": row.id, "firm_id": firm_id, **header_data},
+        )
+        await _insert_lines(db, firm_id=firm_id, transaction_id=row.id, lines=lines)
+        await _record_sync_change(
+            db,
+            firm_id=firm_id,
+            seq=next_seq,
+            table_name="transactions",
+            row_id=row.id,
+            changed_at=server_time,
+        )
+        return Accepted(id=row.id, updated_at=updated_at), next_seq + 1, []
+
+    incoming_key = (updated_at, str(header_data.get("updated_by_device_id")))
+    existing_key = (existing.updated_at, str(existing.updated_by_device_id))
+
+    if incoming_key > existing_key:
+        loser_snapshot = await _current_snapshot(db, firm_id=firm_id, transaction_id=row.id)
+        await _record_history(
+            db,
+            firm_id=firm_id,
+            transaction_id=row.id,
+            version=existing.version,
+            snapshot=loser_snapshot,
+            changed_at=server_time,
+            changed_by_user_id=str(header_data.get("updated_by_user_id")),
+            changed_by_device_id=str(existing.updated_by_device_id),
+            history_id=_history_id(row.id, existing.updated_at, str(existing.updated_by_device_id)),
+        )
+        await db.execute(
+            text(
+                "UPDATE transactions SET "
+                + ", ".join(f"{c} = :{c}" for c in TRANSACTION_COLUMNS if c != "created_by_user_id")
+                + " WHERE firm_id = :firm_id AND id = :id"
+            ),
+            {"id": row.id, "firm_id": firm_id, **header_data},
+        )
+        await _replace_lines(db, firm_id=firm_id, transaction_id=row.id, lines=lines)
+        await _record_sync_change(
+            db,
+            firm_id=firm_id,
+            seq=next_seq,
+            table_name="transactions",
+            row_id=row.id,
+            changed_at=server_time,
+        )
+        return Accepted(id=row.id, updated_at=updated_at), next_seq + 1, []
+
+    if incoming_key < existing_key:
+        loser_snapshot = {"schema_version": 1, "header": header_data, "lines": lines}
+        loser_device_id = str(header_data.get("updated_by_device_id"))
+        await _record_history(
+            db,
+            firm_id=firm_id,
+            transaction_id=row.id,
+            version=header_data.get("version"),
+            snapshot=loser_snapshot,
+            changed_at=server_time,
+            changed_by_user_id=str(header_data.get("updated_by_user_id")),
+            changed_by_device_id=loser_device_id,
+            history_id=_history_id(row.id, updated_at, loser_device_id),
+        )
+        return Accepted(id=row.id, updated_at=updated_at), next_seq, []
+
+    return Accepted(id=row.id, updated_at=updated_at), next_seq, []
+
+
 @router.post("/push", response_model=PushResponse)
 async def push(
     body: PushRequest,
@@ -364,6 +628,10 @@ async def push(
                     )
                 elif row.table == "customers":
                     outcome, next_seq, row_rewrites = await _push_customer_row(
+                        db, firm_id=firm_id, row=row, server_time=server_time, next_seq=next_seq
+                    )
+                elif row.table == "transactions":
+                    outcome, next_seq, row_rewrites = await _push_transaction_row(
                         db, firm_id=firm_id, row=row, server_time=server_time, next_seq=next_seq
                     )
                 else:
@@ -393,7 +661,11 @@ class PullResponse(BaseModel):
 
 # table_name -> the SELECT list for its "current row" lookup on pull. Same
 # restriction as push: only items is wired up so far.
-TABLE_COLUMNS = {"items": ITEM_COLUMNS, "customers": CUSTOMER_COLUMNS}
+TABLE_COLUMNS = {
+    "items": ITEM_COLUMNS,
+    "customers": CUSTOMER_COLUMNS,
+    "transactions": TRANSACTION_COLUMNS,
+}
 
 
 @router.get("/pull", response_model=PullResponse)
@@ -444,7 +716,23 @@ async def pull(
             .mappings()
             .one()
         )
-        rows.append(PullRow(table=table_name, id=row_id, data=dict(current)))
+        data = dict(current)
+        if table_name == "transactions":
+            lines = (
+                (
+                    await db.execute(
+                        text(
+                            f"SELECT {', '.join(TRANSACTION_LINE_COLUMNS)} FROM transaction_lines "
+                            "WHERE firm_id = :firm_id AND transaction_id = :id ORDER BY line_no"
+                        ),
+                        {"firm_id": firm_id, "id": row_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            data["lines"] = [dict(line) for line in lines]
+        rows.append(PullRow(table=table_name, id=row_id, data=data))
 
     return PullResponse(
         rows=rows,

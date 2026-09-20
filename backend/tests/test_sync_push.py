@@ -109,7 +109,7 @@ async def test_push_rejects_a_row_from_an_unsupported_table(client: AsyncClient)
             "device_id": "d1",
             "schema_version": 1,
             "device_time": now,
-            "rows": [{"table": "transactions", "id": str(uuid.uuid4()), "data": {}}],
+            "rows": [{"table": "print_log", "id": str(uuid.uuid4()), "data": {}}],
         },
     )
 

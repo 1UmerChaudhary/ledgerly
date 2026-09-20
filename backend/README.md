@@ -39,13 +39,27 @@ Built so far, all TDD'd against a real Postgres testcontainer (no mocked databas
   no hard uniqueness constraint on phone (unlike the device's SQLite copy, which blocks a
   duplicate at creation time) — the whole point of `needs_review` is letting two rows share a
   phone until it's resolved; a hard constraint would make that impossible.
+- `transactions` (a bill) push/pull as a unit with its lines — never diffed line by line, always
+  replaced wholesale, same as the device does on pull. Unseen → insert header + lines. Seen with
+  a newer write → the *losing* (current) version is archived to `transaction_history` first
+  (reason `sync_overwrite`), then the header is updated and its lines replaced. Seen with an
+  older write → the incoming (losing) version is archived instead and the live row is left
+  alone — acked so the pushing device's outbox clears it, but nothing changes until its next
+  pull. A history row's id is deterministic (`uuid5` of the transaction id + the losing write's
+  own `(updated_at, device)`), so the same conflict discovered twice collides into one row
+  instead of duplicating. Real Postgres limitation caught while building the schema, not by
+  inspection: unlike SQLite, Postgres refuses to let one generated column reference another —
+  `transaction_lines.final_amount` had to duplicate `calculated_total`'s expression inline rather
+  than reference the column.
 - Schema: `firms`, `users`, `firm_members`, `devices`, `refresh_tokens`, `items`, `customers`,
-  `sync_changes` (Alembic migrations under `migrations/versions/`, hand-written — no
-  autogenerate, same discipline as the SQLite side).
+  `transactions`, `transaction_lines`, `transaction_history`, `sync_changes` (Alembic migrations
+  under `migrations/versions/`, hand-written — no autogenerate, same discipline as the SQLite
+  side).
 
-Not built yet: `/auth/google`, and push/pull support for `transactions` (the bill-as-unit case:
-header + lines together, `transaction_history` for edit/delete, tombstoned-customer
-un-delete — per `docs/design-spec.md` Section 4 step 3). Row Level Security is deferred until
+Not built yet: `/auth/google`; `transaction_history` isn't itself pushed/pulled yet, so a
+conflict's loser is visible on the server but not synced to every device; a bill referencing a
+tombstoned or merged customer isn't handled (docs/design-spec.md Section 4 step 3); customer/item
+names aren't enriched into a history snapshot for display. Row Level Security is deferred until
 there's a real non-superuser app role to enforce it against (see the first migration's
 docstring). Deployment to Cloud Run hasn't started.
 
