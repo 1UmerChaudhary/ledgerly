@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter_file_downloader/flutter_file_downloader.dart';
 import 'package:printing/printing.dart';
 
 import '../bootstrap/global_prefs.dart';
@@ -68,8 +70,17 @@ class RealPrintingService implements PrintingService {
   }
 
   @override
-  Future<bool> exportPdf(Uint8List pdfBytes, {required String suggestedName}) =>
-      Printing.sharePdf(bytes: pdfBytes, filename: suggestedName);
+  Future<bool> exportPdf(Uint8List pdfBytes, {required String suggestedName}) async {
+    if (Platform.isAndroid) {
+      final file = await FileDownloader.writeFile(
+        content: base64Encode(pdfBytes),
+        fileName: suggestedName,
+        extension: 'pdf',
+      );
+      return file != null;
+    }
+    return Printing.sharePdf(bytes: pdfBytes, filename: suggestedName);
+  }
 
   @override
   Future<int> exportPng(
@@ -83,6 +94,16 @@ class RealPrintingService implements PrintingService {
       final suggested = pages.length == 1
           ? '$suggestedBaseName.png'
           : '$suggestedBaseName-${i + 1}.png';
+      if (Platform.isAndroid) {
+        final file = await FileDownloader.writeFile(
+          content: base64Encode(png),
+          fileName: suggested,
+          extension: 'png',
+        );
+        if (file == null) break;
+        written++;
+        continue;
+      }
       final location = await getSaveLocation(
         suggestedName: suggested,
         acceptedTypeGroups: const [
