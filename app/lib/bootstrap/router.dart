@@ -9,6 +9,7 @@ import '../features/customers/customers_screen.dart';
 import '../features/customers/opening_balances_screen.dart';
 import '../features/items/items_screen.dart';
 import '../features/dashboard/dashboard_screen.dart';
+import '../features/ledger/ledger_detail_screen.dart';
 import '../features/ledger/ledger_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/setup/first_launch_screen.dart';
@@ -78,6 +79,13 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (_, s) => LedgerScreen(
               customerId: s.pathParameters['id']!,
               selectBillId: s.uri.queryParameters['select'],
+            ),
+          ),
+          GoRoute(
+            path: '/customers/:id/bills/:billId',
+            builder: (_, s) => LedgerDetailScreen(
+              customerId: s.pathParameters['id']!,
+              billId: s.pathParameters['billId']!,
             ),
           ),
           GoRoute(

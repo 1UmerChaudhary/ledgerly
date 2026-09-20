@@ -7,6 +7,7 @@ import 'package:ledgerly_data/ledgerly_data.dart';
 
 import '../../bootstrap/providers.dart';
 import '../../printing/print_actions.dart';
+import '../../shell/breakpoints.dart';
 import '../../theme/ledgerly_theme.dart';
 import '../bills/bill_draft.dart';
 import '../dashboard/dashboard_screen.dart';
@@ -338,22 +339,36 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                     child: _LedgerTable(
                       entries: entries,
                       selected: selectedIndex,
-                      onTap: (i) => setState(() => _selected = i),
+                      onTap: (i) {
+                        final compact =
+                            MediaQuery.of(context).size.width <
+                            kCompactBreakpoint;
+                        if (compact) {
+                          context.go(
+                            '/customers/${widget.customerId}/bills/${entries[i].bill.id}',
+                          );
+                        } else {
+                          setState(() => _selected = i);
+                        }
+                      },
                     ),
                   ),
-                  const SizedBox(width: 16),
-                  SizedBox(
-                    width: 340,
-                    child: selected == null
-                        ? const SizedBox.shrink()
-                        : _DetailPanel(
-                            entry: selected,
-                            itemNames: itemNames,
-                            selectedHistoryVersion: _selectedHistoryVersion,
-                            onSelectHistory: (v) =>
-                                setState(() => _selectedHistoryVersion = v),
-                          ),
-                  ),
+                  if (MediaQuery.of(context).size.width >=
+                      kCompactBreakpoint) ...[
+                    const SizedBox(width: 16),
+                    SizedBox(
+                      width: 340,
+                      child: selected == null
+                          ? const SizedBox.shrink()
+                          : LedgerDetailPanel(
+                              entry: selected,
+                              itemNames: itemNames,
+                              selectedHistoryVersion: _selectedHistoryVersion,
+                              onSelectHistory: (v) =>
+                                  setState(() => _selectedHistoryVersion = v),
+                            ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -601,8 +616,9 @@ class _LedgerTable extends StatelessWidget {
   }
 }
 
-class _DetailPanel extends ConsumerWidget {
-  const _DetailPanel({
+class LedgerDetailPanel extends ConsumerWidget {
+  const LedgerDetailPanel({
+    super.key,
     required this.entry,
     required this.itemNames,
     required this.selectedHistoryVersion,
@@ -623,107 +639,116 @@ class _DetailPanel extends ConsumerWidget {
     // next-newer snapshot, or the live bill for the most recent change.
     Bill after(int index) => index == 0 ? bill : history[index - 1].bill;
 
-    return Container(
-      key: const Key('ledger.detail'),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        border: Border.all(color: c.rule),
-        borderRadius: BorderRadius.circular(4),
-        color: c.surface,
-      ),
-      child: ListView(
-        children: [
-          Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 6,
-            children: [
-              Text(
-                'Bill ${bill.displayNo ?? ''}',
-                style: numberStyle.copyWith(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+    // `ledger.detail` (on the Container below) is the panel's pre-existing
+    // key, already relied on by other tests to scope descendant finds — kept
+    // as-is. `ledger.detailPanel` is new: it marks "this panel is on screen"
+    // whether shown inline (desktop) or pushed full-screen (phone), and a
+    // widget can only carry one key, so it goes on a KeyedSubtree wrapper
+    // rather than replacing the Container's own key or fighting it.
+    return KeyedSubtree(
+      key: const Key('ledger.detailPanel'),
+      child: Container(
+        key: const Key('ledger.detail'),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          border: Border.all(color: c.rule),
+          borderRadius: BorderRadius.circular(4),
+          color: c.surface,
+        ),
+        child: ListView(
+          children: [
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 6,
+              children: [
+                Text(
+                  'Bill ${bill.displayNo ?? ''}',
+                  style: numberStyle.copyWith(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              _Badge('v${bill.version}', c.accentSoft, c.accent),
-              if (bill.overrideIsStale)
-                _Badge('total overridden', c.giveableSoft, c.giveable),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${transactionTypeLabel(bill.type)} · ${shortDate(bill.entryDate)}${bill.description == null ? '' : ' · ${bill.description}'}',
-            style: TextStyle(fontSize: 12.5, color: c.ink2),
-          ),
-          const SizedBox(height: 10),
-          for (final l in bill.lines)
-            _kv(
-              context,
-              '${itemNames[l.itemId] ?? 'Item'} · ${l.bagCount != null ? '${l.bagCount} bags · ' : ''}${l.totalWeight == null ? '' : '${formatKg(l.totalWeight!, trim: true)} kg'}',
-              formatMoney(l.finalTotal, symbol: false),
+                _Badge('v${bill.version}', c.accentSoft, c.accent),
+                if (bill.overrideIsStale)
+                  _Badge('total overridden', c.giveableSoft, c.giveable),
+              ],
             ),
-          if (bill.lines.isNotEmpty)
-            _kv(
-              context,
-              'Calculated',
-              formatMoney(bill.calculatedTotal, symbol: false),
-            ),
-          if (bill.overriddenTotal case final o?)
-            _kv(
-              context,
-              'Override',
-              formatMoney(o, symbol: false),
-              strong: true,
-            ),
-          _kv(
-            context,
-            bill.lines.isEmpty ? 'Amount' : 'Final',
-            formatMoney(bill.finalAmount, symbol: false),
-            strong: true,
-          ),
-          const SizedBox(height: 14),
-          Container(
-            padding: const EdgeInsets.only(top: 10),
-            decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: c.rule)),
-            ),
-            child: Text(
-              'HISTORY',
-              style: TextStyle(
-                fontSize: 11,
-                letterSpacing: 1,
-                fontWeight: FontWeight.w600,
-                color: c.ink3,
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          for (var i = 0; i < history.length; i++)
-            _HistoryRow(
-              key: Key('history.version.${history[i].version}'),
-              entry: history[i],
-              changes: diffBills(
-                history[i].bill,
-                after(i),
-                itemNames: itemNames,
-              ),
-              toVersion: after(i).version,
-              selected: selectedHistoryVersion == history[i].version,
-              onTap: () => onSelectHistory(history[i].version),
-            ),
-          if (history.isEmpty)
+            const SizedBox(height: 4),
             Text(
-              'v1 · created',
+              '${transactionTypeLabel(bill.type)} · ${shortDate(bill.entryDate)}${bill.description == null ? '' : ' · ${bill.description}'}',
               style: TextStyle(fontSize: 12.5, color: c.ink2),
             ),
-          if (history.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
+            const SizedBox(height: 10),
+            for (final l in bill.lines)
+              _kv(
+                context,
+                '${itemNames[l.itemId] ?? 'Item'} · ${l.bagCount != null ? '${l.bagCount} bags · ' : ''}${l.totalWeight == null ? '' : '${formatKg(l.totalWeight!, trim: true)} kg'}',
+                formatMoney(l.finalTotal, symbol: false),
+              ),
+            if (bill.lines.isNotEmpty)
+              _kv(
+                context,
+                'Calculated',
+                formatMoney(bill.calculatedTotal, symbol: false),
+              ),
+            if (bill.overriddenTotal case final o?)
+              _kv(
+                context,
+                'Override',
+                formatMoney(o, symbol: false),
+                strong: true,
+              ),
+            _kv(
+              context,
+              bill.lines.isEmpty ? 'Amount' : 'Final',
+              formatMoney(bill.finalAmount, symbol: false),
+              strong: true,
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.only(top: 10),
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: c.rule)),
+              ),
               child: Text(
-                'Select a version and press R to restore it as a new version.',
-                style: TextStyle(fontSize: 12, color: c.ink3),
+                'HISTORY',
+                style: TextStyle(
+                  fontSize: 11,
+                  letterSpacing: 1,
+                  fontWeight: FontWeight.w600,
+                  color: c.ink3,
+                ),
               ),
             ),
-        ],
+            const SizedBox(height: 6),
+            for (var i = 0; i < history.length; i++)
+              _HistoryRow(
+                key: Key('history.version.${history[i].version}'),
+                entry: history[i],
+                changes: diffBills(
+                  history[i].bill,
+                  after(i),
+                  itemNames: itemNames,
+                ),
+                toVersion: after(i).version,
+                selected: selectedHistoryVersion == history[i].version,
+                onTap: () => onSelectHistory(history[i].version),
+              ),
+            if (history.isEmpty)
+              Text(
+                'v1 · created',
+                style: TextStyle(fontSize: 12.5, color: c.ink2),
+              ),
+            if (history.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Select a version and press R to restore it as a new version.',
+                  style: TextStyle(fontSize: 12, color: c.ink3),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
