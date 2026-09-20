@@ -27,12 +27,13 @@ import 'package:ledgerly_data/ledgerly_data.dart';
 Future<ProviderContainer> pumpLedgerly(
   WidgetTester tester, {
   Future<void> Function(AppDatabase db, DeviceContext ctx)? seed,
+  Size viewSize = const Size(1280, 800),
 }) async {
   // Every test opens its own in-memory database (plus FakeBackupService's
   // own throwaway one), which drift otherwise warns about as if it were the
   // production multi-database misuse it's meant to catch.
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
-  tester.view.physicalSize = const Size(1280, 800);
+  tester.view.physicalSize = viewSize;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
 
@@ -119,6 +120,7 @@ Future<ProviderContainer> pumpLedgerly(
 }
 
 final windowsOnly = TargetPlatformVariant.only(TargetPlatform.windows);
+final phoneOnly = TargetPlatformVariant.only(TargetPlatform.android);
 
 Future<void> pressCtrl(WidgetTester tester, LogicalKeyboardKey key) async {
   await tester.sendKeyDownEvent(

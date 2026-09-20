@@ -195,4 +195,12 @@ void main() {
     await pressCtrl(tester, LogicalKeyboardKey.keyN);
     expect(find.byKey(const Key('bill.screen')), findsOneWidget);
   }, variant: windowsOnly);
+
+  testWidgets('dashboard renders at phone width without the desktop rail', (
+    tester,
+  ) async {
+    await pumpLedgerly(tester, viewSize: const Size(390, 844));
+
+    expect(find.byKey(const Key('shell.bottomNav')), findsOneWidget);
+  }, variant: phoneOnly);
 }
