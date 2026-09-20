@@ -15,12 +15,25 @@ Built so far, all TDD'd against a real Postgres testcontainer (no mocked databas
   token.
 - `POST /auth/login`, `POST /auth/refresh` — same tokens, for a user (and firm) that already
   exists.
-- Schema: `firms`, `users`, `firm_members`, `devices`, `refresh_tokens` (Alembic migrations under
-  `migrations/versions/`, hand-written — no autogenerate, same discipline as the SQLite side).
+- `GET /sync/time` — the server's clock, so a device can seed its offset before it has ever
+  logged in.
+- `POST /sync/push` — bearer token + `X-Firm-Id` header required (checked against
+  `firm_members`). Handles the `items` table end to end: unseen row → insert; seen row with a
+  newer `(updated_at, updated_by_device_id)` → update; older or identical → acked but not
+  applied (the device learns the real state on its next pull); a timestamp more than 5 minutes
+  in the future → rejected as `clock_skew`; any other table name → rejected as
+  `unsupported_table`, not silently accepted half-built. Sequence numbers for `sync_changes` are
+  reserved in one row-locked `UPDATE firms SET next_seq = ...`, so two devices pushing at once
+  can't interleave.
+- Schema: `firms`, `users`, `firm_members`, `devices`, `refresh_tokens`, `items`, `sync_changes`
+  (Alembic migrations under `migrations/versions/`, hand-written — no autogenerate, same
+  discipline as the SQLite side).
 
-Not built yet: `/auth/google`, `/sync/time`, `/sync/push`, `/sync/pull`; Row Level Security
-(deferred until there's a real non-superuser app role to enforce it against — see the first
-migration's docstring); deployment to Cloud Run.
+Not built yet: `/auth/google`, `/sync/pull`, and push support for every table besides `items`
+(customers, transactions — the bill-as-unit case, customer dedup/merge, tombstone un-delete —
+per `docs/design-spec.md` Section 4 step 3). Row Level Security is deferred until there's a real
+non-superuser app role to enforce it against (see the first migration's docstring). Deployment
+to Cloud Run hasn't started.
 
 ## Working on it locally
 
