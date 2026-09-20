@@ -231,6 +231,10 @@ class FakeThermalPrinterService implements ThermalPrinterService {
   /// Set to false to simulate a printer that's off/out of range/unpaired.
   bool connectSucceeds = true;
 
+  /// Set to false to simulate a printer that connects but fails mid-job
+  /// (out of paper, jammed, dropped mid-write).
+  bool writeSucceeds = true;
+
   @override
   Future<List<BluetoothPrinterInfo>> pairedPrinters() async => paired;
 
@@ -243,7 +247,7 @@ class FakeThermalPrinterService implements ThermalPrinterService {
   @override
   Future<bool> writeBytes(Uint8List bytes) async {
     written.add(bytes);
-    return true;
+    return writeSucceeds;
   }
 
   @override

@@ -128,4 +128,37 @@ void main() {
     },
     variant: phoneOnly,
   );
+
+  testWidgets(
+    'a connected printer that fails mid-write still falls back to the PDF path, and still disconnects',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: seedMillPhone,
+        viewSize: const Size(390, 844),
+      );
+      await container
+          .read(globalPrefsProvider)
+          .setThermalPrinter(name: 'MPT-II', mac: '00:11:22:33:44:55');
+      final thermal = container.read(
+        thermalPrinterServiceProvider,
+      ) as FakeThermalPrinterService;
+      thermal.writeSucceeds = false;
+      await pressCtrl(tester, LogicalKeyboardKey.keyI);
+      await tester.enterText(find.byKey(const Key('bill.customer')), 'Rashid');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter, platform: 'windows');
+      await tester.enterText(find.byKey(const Key('cash.amount')), '1000');
+      await pressCtrl(tester, LogicalKeyboardKey.enter);
+
+      await pressCtrl(tester, LogicalKeyboardKey.keyP);
+      await tester.pumpAndSettle();
+
+      expect(thermal.connectedMac, '00:11:22:33:44:55');
+      expect(thermal.disconnected, isTrue); // still disconnects on failure
+      final printing =
+          container.read(printingServiceProvider) as FakePrintingService;
+      expect(printing.printedJobs.length, 1); // fell through correctly
+    },
+    variant: phoneOnly,
+  );
 }
