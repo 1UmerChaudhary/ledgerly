@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ledgerly/features/ledger/ledger_screen.dart';
 import 'package:ledgerly_core/ledgerly_core.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 
@@ -114,6 +115,26 @@ Future<void> seedWithOneBill(AppDatabase db, DeviceContext ctx) async {
 }
 
 void main() {
+  test('compactAmountLabel: positive is a debit, negative is a credit, zero is neither', () {
+    // A widget-level LedgerEntry with a zero bill.signedAmount can't
+    // actually be constructed: signedAmountFor throws ArgumentError for
+    // every TransactionType when finalAmount is zero (verified directly
+    // against packages/ledgerly_core — sale/purchase/cashIn/cashOut/
+    // openingBalance require strictly positive, adjustment explicitly
+    // rejects zero). So this tests the compact card's amount-label
+    // decision as the pure function it now is, against Money directly,
+    // rather than fabricating a Bill the domain can't produce.
+    expect(
+      compactAmountLabel(Money.rupees(100)),
+      'Debit ${formatMoney(Money.rupees(100), symbol: false)}',
+    );
+    expect(
+      compactAmountLabel(Money.rupees(-100)),
+      'Credit ${formatMoney(Money.rupees(100), symbol: false)}',
+    );
+    expect(compactAmountLabel(Money.zero), isNull);
+  });
+
   testWidgets('ledger screen renders without overflow at phone width', (
     tester,
   ) async {

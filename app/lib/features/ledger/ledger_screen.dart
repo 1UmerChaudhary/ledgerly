@@ -47,6 +47,24 @@ String shortDate(String iso) {
   return p.length == 3 ? '${p[2]}/${p[1]}/${p[0].substring(2)}' : iso;
 }
 
+/// The compact card's single Debit/Credit amount line — mirrors
+/// `_LedgerTable._buildWide`'s two separate Debit/Credit cells collapsed
+/// into one: positive is a debit, negative is a credit, and null (render
+/// nothing) is the zero case, matching desktop's both-cells-blank instead
+/// of always falling through to "Credit". A top-level function (not
+/// inlined in `_buildCompact`) so the zero branch — which `signedAmountFor`
+/// currently makes unreachable via any real `Bill` (every `TransactionType`
+/// throws `ArgumentError` for a zero `finalAmount`, verified directly) —
+/// is still covered by a plain unit test against `Money.zero`, without
+/// needing a `Bill`/`LedgerEntry` the domain can't actually produce.
+String? compactAmountLabel(Money signed) {
+  if (signed.isPositive) return 'Debit ${formatMoney(signed, symbol: false)}';
+  if (signed.isNegative) {
+    return 'Credit ${formatMoney(-signed, symbol: false)}';
+  }
+  return null;
+}
+
 /// Two panes: the ledger (chronological, running balance) and the selected
 /// bill with its history. Debit = what the customer owes more (sale, cash paid
 /// to them, opening balance), Credit = owes less (purchase, cash received).
@@ -445,6 +463,60 @@ class _LedgerTable extends StatelessWidget {
   Widget build(BuildContext context) =>
       compact ? _buildCompact(context) : _buildWide(context);
 
+  /// The "deleted" or "edited" status badge next to a bill's type label —
+  /// identical markup in the wide table row and the compact card, so it's
+  /// factored here once instead of copy-pasted between `_buildWide` and
+  /// `_buildCompact`. A bill is never both (delete supersedes any edit
+  /// badge), hence the else-if rather than two independent ifs.
+  List<Widget> _statusBadges(
+    BuildContext context, {
+    required bool deleted,
+    required int version,
+  }) {
+    final c = context.colors;
+    if (deleted) {
+      return [
+        const SizedBox(width: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+          decoration: BoxDecoration(
+            color: c.giveableSoft,
+            borderRadius: BorderRadius.circular(3),
+          ),
+          child: Text(
+            'deleted',
+            style: TextStyle(
+              fontSize: 11,
+              color: c.giveable,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ];
+    }
+    if (version > 1) {
+      return [
+        const SizedBox(width: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+          decoration: BoxDecoration(
+            color: c.accentSoft,
+            borderRadius: BorderRadius.circular(3),
+          ),
+          child: Text(
+            'edited',
+            style: TextStyle(
+              fontSize: 11,
+              color: c.accent,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ];
+    }
+    return const [];
+  }
+
   /// Below [kCompactBreakpoint]: the fixed pixel columns below (680px+
   /// before Description even gets a share) can't fit a ~350px phone
   /// viewport, so each entry becomes a tappable card instead of a table
@@ -540,47 +612,11 @@ class _LedgerTable extends StatelessWidget {
                           ),
                         ),
                       ),
-                      if (deleted) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 5,
-                            vertical: 1,
-                          ),
-                          decoration: BoxDecoration(
-                            color: c.giveableSoft,
-                            borderRadius: BorderRadius.circular(3),
-                          ),
-                          child: Text(
-                            'deleted',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: c.giveable,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ] else if (e.bill.version > 1) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 5,
-                            vertical: 1,
-                          ),
-                          decoration: BoxDecoration(
-                            color: c.accentSoft,
-                            borderRadius: BorderRadius.circular(3),
-                          ),
-                          child: Text(
-                            'edited',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: c.accent,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ],
+                      ..._statusBadges(
+                        context,
+                        deleted: deleted,
+                        version: e.bill.version,
+                      ),
                     ],
                   ),
                   if (e.bill.description case final d?) ...[
@@ -591,13 +627,16 @@ class _LedgerTable extends StatelessWidget {
                       style: TextStyle(fontSize: 12.5, color: c.ink2),
                     ),
                   ],
-                  const SizedBox(height: 4),
-                  Text(
-                    signed.isPositive
-                        ? 'Debit ${formatMoney(signed, symbol: false)}'
-                        : 'Credit ${formatMoney(-signed, symbol: false)}',
-                    style: numberStyle.copyWith(fontSize: 13, color: rowColor),
-                  ),
+                  if (compactAmountLabel(signed) case final label?) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      label,
+                      style: numberStyle.copyWith(
+                        fontSize: 13,
+                        color: rowColor,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -711,47 +750,11 @@ class _LedgerTable extends StatelessWidget {
                                   ),
                                 ),
                               ),
-                              if (deleted) ...[
-                                const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 5,
-                                    vertical: 1,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: c.giveableSoft,
-                                    borderRadius: BorderRadius.circular(3),
-                                  ),
-                                  child: Text(
-                                    'deleted',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: c.giveable,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                              ] else if (e.bill.version > 1) ...[
-                                const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 5,
-                                    vertical: 1,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: c.accentSoft,
-                                    borderRadius: BorderRadius.circular(3),
-                                  ),
-                                  child: Text(
-                                    'edited',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: c.accent,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                              ..._statusBadges(
+                                context,
+                                deleted: deleted,
+                                version: e.bill.version,
+                              ),
                             ],
                           ),
                         ),
