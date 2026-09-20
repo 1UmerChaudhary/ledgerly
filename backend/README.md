@@ -23,15 +23,21 @@ Built so far, all TDD'd against a real Postgres testcontainer (no mocked databas
   applied (the device learns the real state on its next pull); a timestamp more than 5 minutes
   in the future → rejected as `clock_skew`; any other table name → rejected as
   `unsupported_table`, not silently accepted half-built. Sequence numbers for `sync_changes` are
-  reserved in one row-locked `UPDATE firms SET next_seq = ...`, so two devices pushing at once
-  can't interleave.
+  reserved in one row-locked `UPDATE firms SET next_seq = ...` (1-based — see the function's
+  docstring for why 0-based broke `since=0`), so two devices pushing at once can't interleave.
+  Each row's write happens inside its own SAVEPOINT so one bad row can't poison the batch.
+- `GET /sync/pull?since=&limit=` — same auth. `limit` bounds the raw `sync_changes` rows read,
+  not the distinct rows returned (a row that changed many times still costs one output row, but
+  can still fill most of a page by itself); `next_cursor` is always the highest raw sequence
+  number actually read, so a page can never skip an entry that landed between two deduplicated
+  rows.
 - Schema: `firms`, `users`, `firm_members`, `devices`, `refresh_tokens`, `items`, `sync_changes`
   (Alembic migrations under `migrations/versions/`, hand-written — no autogenerate, same
   discipline as the SQLite side).
 
-Not built yet: `/auth/google`, `/sync/pull`, and push support for every table besides `items`
-(customers, transactions — the bill-as-unit case, customer dedup/merge, tombstone un-delete —
-per `docs/design-spec.md` Section 4 step 3). Row Level Security is deferred until there's a real
+Not built yet: `/auth/google`, and push/pull support for every table besides `items` (customers,
+transactions — the bill-as-unit case, customer dedup/merge, tombstone un-delete — per
+`docs/design-spec.md` Section 4 step 3). Row Level Security is deferred until there's a real
 non-superuser app role to enforce it against (see the first migration's docstring). Deployment
 to Cloud Run hasn't started.
 

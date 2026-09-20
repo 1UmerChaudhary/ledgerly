@@ -1,7 +1,7 @@
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -82,6 +82,11 @@ async def _reserve_sequence_block(db: AsyncSession, firm_id: str, count: int) ->
     Returns the first number in the reserved block; unused numbers (from
     rows that end up rejected or are a no-op ack) are simply gaps, which is
     fine for a monotonic cursor.
+
+    Sequence numbers are 1-based: firms.next_seq starts at 0, and pull's
+    cursor convention is "server_seq > since", so a 0-based first sequence
+    number would make the very first change ever pushed indistinguishable
+    from "nothing to pull yet" when since=0.
     """
     if count == 0:
         return 0
@@ -93,7 +98,7 @@ async def _reserve_sequence_block(db: AsyncSession, firm_id: str, count: int) ->
             {"n": count, "firm_id": firm_id},
         )
     ).scalar_one()
-    return new_next_seq - count
+    return new_next_seq - count + 1
 
 
 async def _record_sync_change(
@@ -204,3 +209,77 @@ async def push(
 
     await db.commit()
     return PushResponse(accepted=accepted, rejected=rejected, server_time=server_time)
+
+
+class PullRow(BaseModel):
+    table: str
+    id: str
+    data: dict[str, Any]
+
+
+class PullResponse(BaseModel):
+    rows: list[PullRow]
+    next_cursor: int
+    has_more: bool
+
+
+# table_name -> the SELECT list for its "current row" lookup on pull. Same
+# restriction as push: only items is wired up so far.
+TABLE_COLUMNS = {"items": ITEM_COLUMNS}
+
+
+@router.get("/pull", response_model=PullResponse)
+async def pull(
+    since: int = Query(ge=0),
+    limit: int = Query(default=500, ge=1, le=1000),
+    firm_id: str = Depends(get_current_firm_id),  # noqa: B008 -- FastAPI Depends()
+    db: AsyncSession = Depends(get_db),  # noqa: B008 -- FastAPI Depends()
+) -> PullResponse:
+    """`limit` bounds the raw sync_changes rows read, not the distinct rows
+    returned (docs/design-spec.md Section 4, step 5) — a chatty row that
+    changed many times still only costs one output row, but it can still
+    fill most of a page by itself. next_cursor is always the highest raw
+    seq actually read, so a page can never skip over an entry that landed
+    between two deduplicated rows.
+    """
+    raw = (
+        await db.execute(
+            text(
+                "SELECT table_name, row_id, server_seq FROM sync_changes "
+                "WHERE firm_id = :firm_id AND server_seq > :since "
+                "ORDER BY server_seq ASC LIMIT :limit"
+            ),
+            {"firm_id": firm_id, "since": since, "limit": limit},
+        )
+    ).all()
+
+    if not raw:
+        return PullResponse(rows=[], next_cursor=since, has_more=False)
+
+    seen: dict[tuple[str, str], None] = {}
+    for entry in raw:
+        seen.setdefault((entry.table_name, str(entry.row_id)), None)
+
+    rows: list[PullRow] = []
+    for table_name, row_id in seen:
+        columns = TABLE_COLUMNS[table_name]
+        current = (
+            (
+                await db.execute(
+                    text(
+                        f"SELECT {', '.join(columns)} FROM {table_name} "
+                        "WHERE firm_id = :firm_id AND id = :id"
+                    ),
+                    {"firm_id": firm_id, "id": row_id},
+                )
+            )
+            .mappings()
+            .one()
+        )
+        rows.append(PullRow(table=table_name, id=row_id, data=dict(current)))
+
+    return PullResponse(
+        rows=rows,
+        next_cursor=raw[-1].server_seq,
+        has_more=len(raw) == limit,
+    )
