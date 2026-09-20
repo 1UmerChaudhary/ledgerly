@@ -7,6 +7,7 @@ import '../bootstrap/providers.dart';
 import '../features/settings/settings_providers.dart';
 import '../l10n/app_localizations.dart';
 import '../theme/ledgerly_theme.dart';
+import 'breakpoints.dart';
 
 class KeyHint {
   const KeyHint(this.keys, this.label);
@@ -69,6 +70,15 @@ List<KeyHint> hintsFor(String location) {
   ];
 }
 
+/// Top-level destinations get the compact bottom nav + FAB; every other
+/// route (bill form, ledger, new-customer/item forms, opening balances) is
+/// a drill-down screen and gets a back button instead, matching how
+/// [hintsFor] already special-cases routes by exact/prefix match.
+bool isTopLevelRoute(String location) {
+  const topLevel = {'/', '/customers', '/items', '/cash-sales', '/settings'};
+  return topLevel.contains(location);
+}
+
 /// The frame every firm screen sits in: title bar, navigation rail with the
 /// shortcut letter on each entry, the content, and the key-hint bar that
 /// teaches the shortcuts by always showing what the keyboard can do right now.
@@ -112,26 +122,46 @@ class AppShell extends ConsumerWidget {
       },
       child: Focus(
         autofocus: false,
-        child: Scaffold(
-          backgroundColor: c.paper,
-          body: Column(
-            children: [
-              _TitleBar(
-                firmName: settings?.name ?? firm?.firmName ?? l10n.appName,
-                deviceCode: firm?.ctx.deviceShortCode,
-                backup: backup,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < kCompactBreakpoint;
+            return Scaffold(
+              backgroundColor: c.paper,
+              body: Column(
+                children: [
+                  _TitleBar(
+                    firmName: settings?.name ?? firm?.firmName ?? l10n.appName,
+                    deviceCode: firm?.ctx.deviceShortCode,
+                    backup: backup,
+                    showBackButton: compact && !isTopLevelRoute(location),
+                  ),
+                  Expanded(
+                    child: compact
+                        ? child
+                        : Row(
+                            children: [
+                              _Rail(location: location),
+                              Expanded(child: child),
+                            ],
+                          ),
+                  ),
+                  if (!compact) _KeyBar(hints: hints),
+                ],
               ),
-              Expanded(
-                child: Row(
-                  children: [
-                    _Rail(location: location),
-                    Expanded(child: child),
-                  ],
-                ),
-              ),
-              _KeyBar(hints: hints),
-            ],
-          ),
+              bottomNavigationBar:
+                  compact && isTopLevelRoute(location)
+                  ? _CompactNav(location: location)
+                  : null,
+              floatingActionButton:
+                  compact && isTopLevelRoute(location)
+                  ? FloatingActionButton(
+                      key: const Key('shell.fab.newSale'),
+                      onPressed: () => context.go('/bills/new?type=sale'),
+                      child: const Icon(Icons.add),
+                    )
+                  : null,
+            );
+          },
         ),
       ),
     );
@@ -143,10 +173,12 @@ class _TitleBar extends StatelessWidget {
     required this.firmName,
     this.deviceCode,
     required this.backup,
+    this.showBackButton = false,
   });
   final BackupStatus backup;
   final String firmName;
   final String? deviceCode;
+  final bool showBackButton;
 
   @override
   Widget build(BuildContext context) {
@@ -160,6 +192,19 @@ class _TitleBar extends StatelessWidget {
       ),
       child: Row(
         children: [
+          if (showBackButton)
+            IconButton(
+              key: const Key('shell.backButton'),
+              icon: const Icon(Icons.arrow_back, size: 18),
+              padding: EdgeInsets.zero,
+              onPressed: () {
+                if (context.canPop()) {
+                  context.pop();
+                } else {
+                  context.go('/');
+                }
+              },
+            ),
           Text(
             firmName,
             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
@@ -324,6 +369,30 @@ class _KeyBar extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _CompactNav extends StatelessWidget {
+  const _CompactNav({required this.location});
+  final String location;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = L10n.of(context);
+    const routes = ['/', '/customers', '/items', '/cash-sales', '/settings'];
+    final index = routes.indexOf(location) == -1 ? 0 : routes.indexOf(location);
+    return NavigationBar(
+      key: const Key('shell.bottomNav'),
+      selectedIndex: index,
+      onDestinationSelected: (i) => context.go(routes[i]),
+      destinations: [
+        NavigationDestination(icon: const Icon(Icons.dashboard), label: l10n.navDashboard),
+        NavigationDestination(icon: const Icon(Icons.people), label: l10n.navCustomers),
+        NavigationDestination(icon: const Icon(Icons.inventory_2), label: l10n.navItems),
+        NavigationDestination(icon: const Icon(Icons.point_of_sale), label: l10n.navCashSales),
+        NavigationDestination(icon: const Icon(Icons.settings), label: l10n.navSettings),
+      ],
     );
   }
 }

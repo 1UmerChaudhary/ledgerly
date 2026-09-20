@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ledgerly/bootstrap/router.dart';
 import 'package:ledgerly_core/ledgerly_core.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 
@@ -209,5 +210,36 @@ void main() {
     );
 
     expect(find.byKey(const Key('shell.bottomNav')), findsOneWidget);
+  }, variant: phoneOnly);
+
+  testWidgets('desktop width still shows the nav rail, not the bottom nav', (
+    tester,
+  ) async {
+    final seed = (AppDatabase db, DeviceContext ctx) async {
+      await FirmSetup(db, ctx)
+          .createFirm(name: 'Test Firm', contactNumber: '0300');
+    };
+    await pumpLedgerly(tester, seed: seed); // default desktop size
+
+    expect(find.byKey(const Key('shell.bottomNav')), findsNothing);
+  }, variant: windowsOnly);
+
+  testWidgets('a drill-down route at phone width shows a back button, not the bottom nav', (
+    tester,
+  ) async {
+    final container = await pumpLedgerly(
+      tester,
+      seed: (db, ctx) async {
+        await FirmSetup(db, ctx)
+            .createFirm(name: 'Test Firm', contactNumber: '0300');
+      },
+      viewSize: const Size(412, 844),
+    );
+    // Navigate to items new (a drill-down route, not a top-level destination)
+    container.read(routerProvider).go('/items/new');
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('shell.backButton')), findsOneWidget);
+    expect(find.byKey(const Key('shell.bottomNav')), findsNothing);
   }, variant: phoneOnly);
 }
