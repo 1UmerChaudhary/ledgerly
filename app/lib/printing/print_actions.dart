@@ -3,6 +3,7 @@ import 'package:ledgerly_data/ledgerly_data.dart';
 
 import '../bootstrap/providers.dart';
 import 'printing_service.dart';
+import 'thermal_printer_service.dart';
 
 final printingServiceProvider = Provider<PrintingService>(
   (ref) => RealPrintingService(ref.watch(globalPrefsProvider)),
@@ -12,10 +13,39 @@ final printerDiscoveryProvider = Provider<PrinterDiscovery>(
   (ref) => RealPrinterDiscovery(),
 );
 
+final thermalPrinterServiceProvider = Provider<ThermalPrinterService>(
+  (ref) => RealThermalPrinterService(),
+);
+
 /// Builds the slip, sends it to the printer, and logs the print — the one
 /// path every "print this bill" action goes through, whether triggered from
-/// the bill form's Saved state or later from the ledger.
+/// the bill form's Saved state or later from the ledger. A saved Bluetooth
+/// printer is tried first; a missing printer, or a failed connect/write (off,
+/// out of range, unpaired), falls through to the OS print path below instead
+/// of failing silently — the same "ask" degradation the app already uses
+/// everywhere else nothing is configured.
 Future<void> printSlip(WidgetRef ref, OpenFirm firm, String billId) async {
+  final mac = ref.read(globalPrefsProvider).thermalPrinterMac;
+  if (mac != null) {
+    final service = ref.read(thermalPrinterServiceProvider);
+    if (await service.connect(mac)) {
+      final slip = await firm.bills.slipFor(
+        billId,
+        printedAt: firm.ctx.stamp(),
+      );
+      final wrote = await service.writeBytes(buildSlipEscPos(slip));
+      await service.disconnect();
+      if (wrote) {
+        await firm.bills.logPrint(
+          kind: 'slip',
+          transactionId: billId,
+          printedAt: slip.printedAt,
+          printedBalanceAfter: slip.newBalance,
+        );
+        return;
+      }
+    }
+  }
   final slip = await firm.bills.slipFor(billId, printedAt: firm.ctx.stamp());
   final bytes = await buildSlipPdf(slip);
   await ref

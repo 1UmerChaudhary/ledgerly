@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ledgerly/features/settings/settings_providers.dart';
 import 'package:ledgerly/printing/print_actions.dart';
 import 'package:ledgerly/printing/printing_service.dart';
+import 'package:ledgerly/printing/thermal_printer_service.dart';
 import 'package:ledgerly_core/ledgerly_core.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 
@@ -260,6 +261,28 @@ void main() {
       expect(find.textContaining('does not exist'), findsOneWidget);
       final fake = container.read(restoreServiceProvider) as FakeBackupService;
       expect(fake.restoredPath, isNull); // validated and rejected first
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
+    'picking a paired Bluetooth printer saves it and shows it as selected',
+    (tester) async {
+      final container = await pumpLedgerly(tester, seed: seed);
+      final fakeThermal = container.read(
+        thermalPrinterServiceProvider,
+      ) as FakeThermalPrinterService;
+      fakeThermal.paired = [
+        const BluetoothPrinterInfo(name: 'MPT-II', mac: '00:11:22:33:44:55'),
+      ];
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+
+      await tester.tap(find.byKey(const Key('settings.thermalPrinterPicker')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('MPT-II'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('MPT-II'), findsWidgets);
     },
     variant: windowsOnly,
   );

@@ -26,6 +26,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   printing: ^5.15.0
+  print_bluetooth_thermal: ^1.2.4
   file_selector: ^1.1.0
   http: ^1.2.0
 

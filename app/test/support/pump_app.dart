@@ -18,6 +18,7 @@ import 'package:ledgerly/features/settings/settings_providers.dart';
 import 'package:ledgerly/platform/native_pickers.dart';
 import 'package:ledgerly/printing/print_actions.dart';
 import 'package:ledgerly/printing/printing_service.dart';
+import 'package:ledgerly/printing/thermal_printer_service.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 
 /// Boots the real app against an in-memory database. Use together with
@@ -83,6 +84,7 @@ Future<ProviderContainer> pumpLedgerly(
   final fakePrinting = FakePrintingService();
   final fakePickers = FakeNativePickers();
   final fakePrinterDiscovery = FakePrinterDiscovery();
+  final fakeThermal = FakeThermalPrinterService();
   final fakeRestoreService = FakeBackupService();
   final fakeHttp = FakeHttpClient();
   final container = ProviderContainer(
@@ -95,6 +97,7 @@ Future<ProviderContainer> pumpLedgerly(
       printingServiceProvider.overrideWithValue(fakePrinting),
       nativePickersProvider.overrideWithValue(fakePickers),
       printerDiscoveryProvider.overrideWithValue(fakePrinterDiscovery),
+      thermalPrinterServiceProvider.overrideWithValue(fakeThermal),
       restoreServiceProvider.overrideWithValue(fakeRestoreService),
       httpClientProvider.overrideWithValue(fakeHttp),
       databaseOpenerProvider.overrideWithValue(openDb),
@@ -215,6 +218,36 @@ class FakePrinterDiscovery implements PrinterDiscovery {
 
   @override
   Future<List<PrinterInfo>> list() async => printers;
+}
+
+/// Records connect/write/disconnect calls instead of touching real
+/// Bluetooth hardware, which cannot run in an automated test either.
+class FakeThermalPrinterService implements ThermalPrinterService {
+  List<BluetoothPrinterInfo> paired = const [];
+  String? connectedMac;
+  final List<Uint8List> written = [];
+  bool disconnected = false;
+
+  /// Set to false to simulate a printer that's off/out of range/unpaired.
+  bool connectSucceeds = true;
+
+  @override
+  Future<List<BluetoothPrinterInfo>> pairedPrinters() async => paired;
+
+  @override
+  Future<bool> connect(String mac) async {
+    connectedMac = mac;
+    return connectSucceeds;
+  }
+
+  @override
+  Future<bool> writeBytes(Uint8List bytes) async {
+    written.add(bytes);
+    return true;
+  }
+
+  @override
+  Future<void> disconnect() async => disconnected = true;
 }
 
 /// Records what restore was asked to do instead of touching a real backup

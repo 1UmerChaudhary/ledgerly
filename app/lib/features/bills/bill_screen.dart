@@ -1099,36 +1099,47 @@ class _SavedBanner extends StatelessWidget {
         border: Border.all(color: c.receivable),
         borderRadius: BorderRadius.circular(4),
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 20,
-            height: 20,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: c.receivable,
-              shape: BoxShape.circle,
-            ),
-            child: const Text(
-              '✓',
-              style: TextStyle(color: Colors.white, fontSize: 12),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              customer == null
-                  ? 'Saved. Bill ${saved.displayNo} · Cash sale of ${formatMoney(saved.finalAmount)}.'
-                  : 'Saved. Bill ${saved.displayNo} · ${formatMoney(saved.finalAmount)} · ${customer!.name} now ${balance == null ? '' : _owesPhrase(balance!)}',
-              style: const TextStyle(fontSize: 13.5),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            'Ctrl+P print · Ctrl+N next · Esc ledger',
-            style: TextStyle(fontSize: 12.5, color: c.ink2),
-          ),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // The trailing hint names keyboard shortcuts (Ctrl+P/Ctrl+N/Esc)
+          // that don't exist on a touch device, and its fixed width doesn't
+          // fit a phone-width row anyway -- drop it below the breakpoint
+          // instead of wrapping it, same reasoning as _Header's compact split.
+          final compact = constraints.maxWidth < kCompactBreakpoint;
+          return Row(
+            children: [
+              Container(
+                width: 20,
+                height: 20,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: c.receivable,
+                  shape: BoxShape.circle,
+                ),
+                child: const Text(
+                  '✓',
+                  style: TextStyle(color: Colors.white, fontSize: 12),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  customer == null
+                      ? 'Saved. Bill ${saved.displayNo} · Cash sale of ${formatMoney(saved.finalAmount)}.'
+                      : 'Saved. Bill ${saved.displayNo} · ${formatMoney(saved.finalAmount)} · ${customer!.name} now ${balance == null ? '' : _owesPhrase(balance!)}',
+                  style: const TextStyle(fontSize: 13.5),
+                ),
+              ),
+              if (!compact) ...[
+                const SizedBox(width: 12),
+                Text(
+                  'Ctrl+P print · Ctrl+N next · Esc ledger',
+                  style: TextStyle(fontSize: 12.5, color: c.ink2),
+                ),
+              ],
+            ],
+          );
+        },
       ),
     );
   }

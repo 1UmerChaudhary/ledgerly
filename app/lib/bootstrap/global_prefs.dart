@@ -32,6 +32,11 @@ abstract class GlobalPrefs {
   String? get printerName;
   String? get printerUrl;
 
+  /// The saved Bluetooth thermal printer, same reasoning as [printerName]/
+  /// [printerUrl]: name for display, mac for reconnecting.
+  String? get thermalPrinterName;
+  String? get thermalPrinterMac;
+
   /// Where the phase-2 backend lives. Editable so the same build can point
   /// at a local dev server or the real deployment.
   String? get backendUrl;
@@ -42,6 +47,7 @@ abstract class GlobalPrefs {
   Future<void> setLastFirmId(String? id);
   Future<void> setBackupFolder(String? path);
   Future<void> setPrinter({String? name, String? url});
+  Future<void> setThermalPrinter({String? name, String? mac});
   Future<void> setBackendUrl(String? url);
   Future<void> setCloudSession(CloudSession? session);
 }
@@ -69,6 +75,10 @@ class SharedPrefsGlobalPrefs implements GlobalPrefs {
   String? get printerName => _prefs.getString('printer_name');
   @override
   String? get printerUrl => _prefs.getString('printer_url');
+  @override
+  String? get thermalPrinterName => _prefs.getString('thermal_printer_name');
+  @override
+  String? get thermalPrinterMac => _prefs.getString('thermal_printer_mac');
   @override
   String? get backendUrl => _prefs.getString('backend_url');
   @override
@@ -117,6 +127,20 @@ class SharedPrefsGlobalPrefs implements GlobalPrefs {
   }
 
   @override
+  Future<void> setThermalPrinter({String? name, String? mac}) async {
+    if (name == null) {
+      await _prefs.remove('thermal_printer_name');
+    } else {
+      await _prefs.setString('thermal_printer_name', name);
+    }
+    if (mac == null) {
+      await _prefs.remove('thermal_printer_mac');
+    } else {
+      await _prefs.setString('thermal_printer_mac', mac);
+    }
+  }
+
+  @override
   Future<void> setBackendUrl(String? url) => url == null
       ? _prefs.remove('backend_url')
       : _prefs.setString('backend_url', url);
@@ -153,6 +177,10 @@ class InMemoryGlobalPrefs implements GlobalPrefs {
   @override
   String? printerUrl;
   @override
+  String? thermalPrinterName;
+  @override
+  String? thermalPrinterMac;
+  @override
   String? backendUrl;
   @override
   CloudSession? cloudSession;
@@ -164,6 +192,12 @@ class InMemoryGlobalPrefs implements GlobalPrefs {
   Future<void> setPrinter({String? name, String? url}) async {
     printerName = name;
     printerUrl = url;
+  }
+
+  @override
+  Future<void> setThermalPrinter({String? name, String? mac}) async {
+    thermalPrinterName = name;
+    thermalPrinterMac = mac;
   }
 
   @override

@@ -8,6 +8,7 @@ import 'package:ledgerly_data/ledgerly_data.dart';
 import '../../bootstrap/providers.dart';
 import '../../printing/print_actions.dart';
 import '../../printing/printing_service.dart';
+import '../../printing/thermal_printer_service.dart';
 import '../../sync/backend_client.dart';
 import '../../theme/ledgerly_theme.dart';
 import '../dashboard/dashboard_screen.dart';
@@ -118,6 +119,33 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     await ref.read(printerChoiceProvider.notifier).set(chosen);
   }
 
+  Future<void> _chooseThermalPrinter() async {
+    final printers = await ref
+        .read(thermalPrinterServiceProvider)
+        .pairedPrinters();
+    if (!mounted) return;
+    final picked = await showDialog<BluetoothPrinterInfo>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        key: const Key('settings.thermalPrinterDialog'),
+        title: const Text('Choose a Bluetooth printer'),
+        children: [
+          for (final p in printers)
+            SimpleDialogOption(
+              key: Key('settings.thermalPrinterOption.${p.name}'),
+              onPressed: () => Navigator.of(dialogContext).pop(p),
+              child: Text(p.name),
+            ),
+        ],
+      ),
+    );
+    if (picked == null) return;
+    await ref
+        .read(globalPrefsProvider)
+        .setThermalPrinter(name: picked.name, mac: picked.mac);
+    setState(() {});
+  }
+
   Future<void> _browseFolder() async {
     final picked = await ref.read(nativePickersProvider).pickFolder();
     if (picked != null) setState(() => _folder.text = picked);
@@ -226,285 +254,320 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       child: Padding(
         key: const Key('settings.screen'),
         padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
-        child: ListView(
-          children: [
-            Text(
-              'SETTINGS',
-              style: TextStyle(
-                fontSize: 11,
-                letterSpacing: 1,
-                fontWeight: FontWeight.w600,
-                color: c.ink3,
-              ),
-            ),
-            const SizedBox(height: 14),
-            _section(context, 'Firm', [
-              _field(
-                'Firm name',
-                TextField(
-                  key: const Key('settings.firmName'),
-                  controller: _name,
-                  autofocus: true,
+        // A plain ListView is Sliver-backed and lazily estimates far-off
+        // children's extents; on this screen's mix of fixed- and
+        // conditionally-sized rows that estimate can undershoot, so the
+        // sliver stops building before the last section ever exists in the
+        // tree (no error -- it just silently isn't there). A settings
+        // screen's content is small and bounded, so build all of it as an
+        // ordinary Column and let this scroll instead.
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'SETTINGS',
+                style: TextStyle(
+                  fontSize: 11,
+                  letterSpacing: 1,
+                  fontWeight: FontWeight.w600,
+                  color: c.ink3,
                 ),
               ),
-              _field(
-                'Contact',
-                TextField(
-                  key: const Key('settings.contact'),
-                  controller: _contact,
-                  style: numberStyle.copyWith(fontSize: 14),
-                ),
-              ),
-              _field(
-                'Address',
-                TextField(
-                  key: const Key('settings.address'),
-                  controller: _address,
-                ),
-              ),
-            ]),
-            _section(context, 'Display', [
-              _field(
-                'Show paisa',
-                Row(
-                  children: [
-                    Switch(
-                      key: const Key('settings.showPaisa'),
-                      value: firm?.showPaisa ?? false,
-                      onChanged: (v) => _toggle(showPaisa: v),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      firm?.showPaisa ?? false
-                          ? 'Rs 6,02,835.72'
-                          : 'Rs 6,02,836 (whole rupees)',
-                      style: numberStyle.copyWith(fontSize: 13, color: c.ink2),
-                    ),
-                  ],
-                ),
-              ),
-              _field(
-                'Grouping',
-                SegmentedButton<NumberGrouping>(
-                  key: const Key('settings.grouping'),
-                  segments: const [
-                    ButtonSegment(
-                      value: NumberGrouping.pakistani,
-                      label: Text('12,34,567'),
-                    ),
-                    ButtonSegment(
-                      value: NumberGrouping.western,
-                      label: Text('1,234,567'),
-                    ),
-                  ],
-                  selected: {firm?.grouping ?? NumberGrouping.pakistani},
-                  onSelectionChanged: (s) => _toggle(grouping: s.first),
-                ),
-              ),
-            ]),
-            _section(context, 'Printer', [
-              _field(
-                'Default printer',
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        printer?.name ?? 'Ask each time',
-                        style: TextStyle(color: c.ink2),
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    OutlinedButton(
-                      key: const Key('settings.choosePrinter'),
-                      onPressed: _choosePrinter,
-                      child: const Text('Choose printer…'),
-                    ),
-                  ],
-                ),
-              ),
-            ]),
-            _section(context, 'Cloud sync', [
-              _field(
-                'Server',
-                TextField(
-                  key: const Key('settings.backendUrl'),
-                  controller: _backendUrl,
-                  style: numberStyle.copyWith(fontSize: 13),
-                  onSubmitted: (_) => _saveBackendUrl(),
-                ),
-              ),
-              if (cloudSession == null) ...[
+              const SizedBox(height: 14),
+              _section(context, 'Firm', [
                 _field(
-                  'Email',
+                  'Firm name',
                   TextField(
-                    key: const Key('settings.cloudEmail'),
-                    controller: _email,
+                    key: const Key('settings.firmName'),
+                    controller: _name,
+                    autofocus: true,
                   ),
                 ),
                 _field(
-                  'Password',
+                  'Contact',
                   TextField(
-                    key: const Key('settings.cloudPassword'),
-                    controller: _password,
-                    obscureText: true,
+                    key: const Key('settings.contact'),
+                    controller: _contact,
+                    style: numberStyle.copyWith(fontSize: 14),
                   ),
                 ),
                 _field(
-                  '',
+                  'Address',
+                  TextField(
+                    key: const Key('settings.address'),
+                    controller: _address,
+                  ),
+                ),
+              ]),
+              _section(context, 'Display', [
+                _field(
+                  'Show paisa',
                   Row(
                     children: [
-                      OutlinedButton(
-                        key: const Key('settings.cloudRegister'),
-                        onPressed: _register,
-                        child: const Text('Create cloud account'),
+                      Switch(
+                        key: const Key('settings.showPaisa'),
+                        value: firm?.showPaisa ?? false,
+                        onChanged: (v) => _toggle(showPaisa: v),
                       ),
-                      const SizedBox(width: 10),
-                      OutlinedButton(
-                        key: const Key('settings.cloudLogin'),
-                        onPressed: _login,
-                        child: const Text('Log in'),
+                      const SizedBox(width: 8),
+                      Text(
+                        firm?.showPaisa ?? false
+                            ? 'Rs 6,02,835.72'
+                            : 'Rs 6,02,836 (whole rupees)',
+                        style: numberStyle.copyWith(
+                          fontSize: 13,
+                          color: c.ink2,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                if (_cloudError case final e?)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 130),
-                    child: Text(
-                      e,
-                      key: const Key('settings.cloudError'),
-                      style: TextStyle(color: c.giveable, fontSize: 12.5),
-                    ),
-                  ),
-              ] else ...[
                 _field(
-                  'Connected',
-                  Text(
-                    key: const Key('settings.cloudConnected'),
-                    '${cloudSession.email} — ${cloudSession.firmName}',
-                    style: TextStyle(color: c.ink2),
+                  'Grouping',
+                  SegmentedButton<NumberGrouping>(
+                    key: const Key('settings.grouping'),
+                    segments: const [
+                      ButtonSegment(
+                        value: NumberGrouping.pakistani,
+                        label: Text('12,34,567'),
+                      ),
+                      ButtonSegment(
+                        value: NumberGrouping.western,
+                        label: Text('1,234,567'),
+                      ),
+                    ],
+                    selected: {firm?.grouping ?? NumberGrouping.pakistani},
+                    onSelectionChanged: (s) => _toggle(grouping: s.first),
                   ),
                 ),
+              ]),
+              _section(context, 'Printer', [
                 _field(
-                  'Sync',
+                  'Default printer',
                   Row(
                     children: [
                       Expanded(
                         child: Text(
-                          syncStatus.error ??
-                              (syncStatus.running
-                                  ? 'Syncing…'
-                                  : syncStatus.summary ??
-                                        'Not yet in this session'),
-                          key: const Key('settings.syncStatus'),
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: syncStatus.error != null
-                                ? c.giveable
-                                : c.ink2,
-                          ),
+                          printer?.name ?? 'Ask each time',
+                          style: TextStyle(color: c.ink2),
                         ),
                       ),
                       const SizedBox(width: 14),
-                      FilledButton(
-                        key: const Key('settings.syncNow'),
-                        onPressed: syncStatus.running ? null : _syncNow,
-                        child: const Text('Sync now'),
-                      ),
-                      const SizedBox(width: 10),
                       OutlinedButton(
-                        key: const Key('settings.cloudDisconnect'),
-                        onPressed: _disconnect,
-                        child: const Text('Disconnect'),
+                        key: const Key('settings.choosePrinter'),
+                        onPressed: _choosePrinter,
+                        child: const Text('Choose printer…'),
                       ),
                     ],
                   ),
                 ),
-              ],
-            ]),
-            _section(context, 'Backup', [
-              _field(
-                'Backup folder',
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        key: const Key('settings.backupFolder'),
-                        controller: _folder,
-                        style: numberStyle.copyWith(fontSize: 13),
-                        decoration: const InputDecoration(
-                          hintText:
-                              r'D:\LedgerlyBackups or a Google Drive folder',
+              ]),
+              _section(context, 'Bluetooth printer', [
+                _field(
+                  'Thermal printer',
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          ref.watch(globalPrefsProvider).thermalPrinterName ??
+                              'None selected',
+                          style: TextStyle(color: c.ink2),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton(
-                      key: const Key('settings.browseBackupFolder'),
-                      onPressed: _browseFolder,
-                      child: const Text('Browse…'),
-                    ),
-                  ],
-                ),
-              ),
-              _field(
-                'Restore',
-                OutlinedButton(
-                  key: const Key('settings.restore'),
-                  onPressed: _restore,
-                  child: const Text('Restore from backup…'),
-                ),
-              ),
-              _field(
-                'Last backup',
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        backup.running
-                            ? 'Running…'
-                            : backup.lastAt == null
-                            ? 'Not yet in this session'
-                            : 'Backed up ${_hhmm(backup.lastAt!)}',
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: c.ink2),
+                      const SizedBox(width: 14),
+                      OutlinedButton(
+                        key: const Key('settings.thermalPrinterPicker'),
+                        onPressed: _chooseThermalPrinter,
+                        child: const Text('Choose printer…'),
                       ),
-                    ),
-                    const SizedBox(width: 14),
-                    FilledButton(
-                      key: const Key('settings.backupNow'),
-                      onPressed: backup.running
-                          ? null
-                          : () async {
-                              await ref
-                                  .read(backupFolderProvider.notifier)
-                                  .set(_folder.text);
-                              await ref
-                                  .read(backupRunnerProvider.notifier)
-                                  .runNow();
-                            },
-                      child: const Text('Backup now  Ctrl+B'),
-                    ),
-                  ],
-                ),
-              ),
-              if (backup.error case final e?)
-                Padding(
-                  padding: const EdgeInsets.only(left: 130),
-                  child: Text(
-                    e,
-                    style: TextStyle(color: c.giveable, fontSize: 12.5),
+                    ],
                   ),
                 ),
-            ]),
-            if (_message case final m?)
-              Text(m, style: TextStyle(color: c.receivable)),
-            const SizedBox(height: 8),
-            Text(
-              'Ctrl+Enter saves firm details and the backup folder · Esc back',
-              style: TextStyle(fontSize: 12.5, color: c.ink3),
-            ),
-          ],
+              ]),
+              _section(context, 'Cloud sync', [
+                _field(
+                  'Server',
+                  TextField(
+                    key: const Key('settings.backendUrl'),
+                    controller: _backendUrl,
+                    style: numberStyle.copyWith(fontSize: 13),
+                    onSubmitted: (_) => _saveBackendUrl(),
+                  ),
+                ),
+                if (cloudSession == null) ...[
+                  _field(
+                    'Email',
+                    TextField(
+                      key: const Key('settings.cloudEmail'),
+                      controller: _email,
+                    ),
+                  ),
+                  _field(
+                    'Password',
+                    TextField(
+                      key: const Key('settings.cloudPassword'),
+                      controller: _password,
+                      obscureText: true,
+                    ),
+                  ),
+                  _field(
+                    '',
+                    Row(
+                      children: [
+                        OutlinedButton(
+                          key: const Key('settings.cloudRegister'),
+                          onPressed: _register,
+                          child: const Text('Create cloud account'),
+                        ),
+                        const SizedBox(width: 10),
+                        OutlinedButton(
+                          key: const Key('settings.cloudLogin'),
+                          onPressed: _login,
+                          child: const Text('Log in'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_cloudError case final e?)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 130),
+                      child: Text(
+                        e,
+                        key: const Key('settings.cloudError'),
+                        style: TextStyle(color: c.giveable, fontSize: 12.5),
+                      ),
+                    ),
+                ] else ...[
+                  _field(
+                    'Connected',
+                    Text(
+                      key: const Key('settings.cloudConnected'),
+                      '${cloudSession.email} — ${cloudSession.firmName}',
+                      style: TextStyle(color: c.ink2),
+                    ),
+                  ),
+                  _field(
+                    'Sync',
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            syncStatus.error ??
+                                (syncStatus.running
+                                    ? 'Syncing…'
+                                    : syncStatus.summary ??
+                                          'Not yet in this session'),
+                            key: const Key('settings.syncStatus'),
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: syncStatus.error != null
+                                  ? c.giveable
+                                  : c.ink2,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        FilledButton(
+                          key: const Key('settings.syncNow'),
+                          onPressed: syncStatus.running ? null : _syncNow,
+                          child: const Text('Sync now'),
+                        ),
+                        const SizedBox(width: 10),
+                        OutlinedButton(
+                          key: const Key('settings.cloudDisconnect'),
+                          onPressed: _disconnect,
+                          child: const Text('Disconnect'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ]),
+              _section(context, 'Backup', [
+                _field(
+                  'Backup folder',
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          key: const Key('settings.backupFolder'),
+                          controller: _folder,
+                          style: numberStyle.copyWith(fontSize: 13),
+                          decoration: const InputDecoration(
+                            hintText:
+                                r'D:\LedgerlyBackups or a Google Drive folder',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        key: const Key('settings.browseBackupFolder'),
+                        onPressed: _browseFolder,
+                        child: const Text('Browse…'),
+                      ),
+                    ],
+                  ),
+                ),
+                _field(
+                  'Restore',
+                  OutlinedButton(
+                    key: const Key('settings.restore'),
+                    onPressed: _restore,
+                    child: const Text('Restore from backup…'),
+                  ),
+                ),
+                _field(
+                  'Last backup',
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          backup.running
+                              ? 'Running…'
+                              : backup.lastAt == null
+                              ? 'Not yet in this session'
+                              : 'Backed up ${_hhmm(backup.lastAt!)}',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: c.ink2),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      FilledButton(
+                        key: const Key('settings.backupNow'),
+                        onPressed: backup.running
+                            ? null
+                            : () async {
+                                await ref
+                                    .read(backupFolderProvider.notifier)
+                                    .set(_folder.text);
+                                await ref
+                                    .read(backupRunnerProvider.notifier)
+                                    .runNow();
+                              },
+                        child: const Text('Backup now  Ctrl+B'),
+                      ),
+                    ],
+                  ),
+                ),
+                if (backup.error case final e?)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 130),
+                    child: Text(
+                      e,
+                      style: TextStyle(color: c.giveable, fontSize: 12.5),
+                    ),
+                  ),
+              ]),
+              if (_message case final m?)
+                Text(m, style: TextStyle(color: c.receivable)),
+              const SizedBox(height: 8),
+              Text(
+                'Ctrl+Enter saves firm details and the backup folder · Esc back',
+                style: TextStyle(fontSize: 12.5, color: c.ink3),
+              ),
+            ],
+          ),
         ),
       ),
     );
