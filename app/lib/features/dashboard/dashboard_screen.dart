@@ -6,6 +6,7 @@ import 'package:ledgerly_core/ledgerly_core.dart';
 
 import '../../bootstrap/providers.dart';
 import '../../l10n/app_localizations.dart';
+import '../../shell/breakpoints.dart';
 import '../settings/settings_providers.dart';
 import '../../theme/ledgerly_theme.dart';
 
@@ -159,40 +160,64 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               )
             else
               Expanded(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: _BalancePanel(
-                        key: const Key('dashboard.receivables'),
-                        title: l10n.receivable,
-                        color: c.receivable,
-                        rows: receivables,
-                        selectedIndex: _selected,
-                        onTap: (i) => context.go(
-                          '/customers/${receivables[i].customer.id}',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 18),
-                    Expanded(
-                      child: _BalancePanel(
-                        key: const Key('dashboard.giveables'),
-                        title: l10n.giveable,
-                        color: c.giveable,
-                        rows: giveables,
-                        selectedIndex: _selected - receivables.length,
-                        onTap: (i) => context.go(
-                          '/customers/${giveables[i].customer.id}',
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                child: _buildBalancePanels(context, receivables, giveables),
               ),
           ],
         ),
       ),
+    );
+  }
+
+  /// Side by side, each panel gets roughly half the screen width. At phone
+  /// width that's ~164px, which a large balance's digits (header total, or
+  /// a row's amount) don't fit next to their label — RenderFlex overflow.
+  /// Below [kCompactBreakpoint], stack the panels instead: each gets the
+  /// full width and its own scrollable half. Above it, the original
+  /// side-by-side Row is unchanged.
+  Widget _buildBalancePanels(
+    BuildContext context,
+    List<DashboardRow> receivables,
+    List<DashboardRow> giveables,
+  ) {
+    final l10n = L10n.of(context);
+    final c = context.colors;
+    final receivablesPanel = _BalancePanel(
+      key: const Key('dashboard.receivables'),
+      title: l10n.receivable,
+      color: c.receivable,
+      rows: receivables,
+      selectedIndex: _selected,
+      onTap: (i) => context.go('/customers/${receivables[i].customer.id}'),
+    );
+    final giveablesPanel = _BalancePanel(
+      key: const Key('dashboard.giveables'),
+      title: l10n.giveable,
+      color: c.giveable,
+      rows: giveables,
+      selectedIndex: _selected - receivables.length,
+      onTap: (i) => context.go('/customers/${giveables[i].customer.id}'),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < kCompactBreakpoint) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: receivablesPanel),
+              const SizedBox(height: 12),
+              Expanded(child: giveablesPanel),
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: receivablesPanel),
+            const SizedBox(width: 18),
+            Expanded(child: giveablesPanel),
+          ],
+        );
+      },
     );
   }
 }

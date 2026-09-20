@@ -212,6 +212,35 @@ void main() {
     expect(find.byKey(const Key('shell.bottomNav')), findsOneWidget);
   }, variant: phoneOnly);
 
+  testWidgets(
+    'dashboard balance panel header does not overflow at phone width with a large balance',
+    (tester) async {
+      await pumpLedgerly(
+        tester,
+        seed: (db, ctx) async {
+          await FirmSetup(db, ctx)
+              .createFirm(name: 'Test Firm', contactNumber: '0300');
+          final customers = CustomersRepository(db, ctx);
+          final bills = BillsRepository(db, ctx);
+          final rashid = await customers.create(name: 'Rashid Traders');
+          await bills.saveNew(
+            Bill(
+              id: newId(),
+              customerId: rashid.id,
+              type: TransactionType.openingBalance,
+              entryDate: '2026-09-18',
+              typedAmount: Money.rupees(50000000), // Rs 5,00,00,000
+            ),
+          );
+        },
+        viewSize: const Size(390, 844),
+      );
+
+      expect(tester.takeException(), isNull);
+    },
+    variant: phoneOnly,
+  );
+
   testWidgets('desktop width still shows the nav rail, not the bottom nav', (
     tester,
   ) async {
