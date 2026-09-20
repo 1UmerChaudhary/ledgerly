@@ -1,0 +1,10 @@
+.venv
+tests
+migrations
+alembic.ini
+*.egg-info
+.pytest_cache
+.ruff_cache
+__pycache__
+*.pyc
+README.md

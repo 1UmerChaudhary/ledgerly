@@ -314,7 +314,7 @@ same-field collisions produce a history loser. Borrowed from Google Docs' "edits
 never fight" (Operational Transformation), simplified for field records. Decide at phase 2 design.
 
 Backend: `POST /auth/login`, `/auth/google`, `/auth/refresh`, `GET /sync/time`, `POST /sync/push`,
-`GET /sync/pull`, `GET /healthz`. JWT 15 min + per-device refresh token. Cloud Run min 0; Cloud SQL
+`GET /sync/pull`, `GET /status`. JWT 15 min + per-device refresh token. Cloud Run min 0; Cloud SQL
 smallest tier (~$10–15/mo, never sleeps); Secret Manager; Alembic as Cloud Run Job before traffic
 switch; JSON logs; uptime check; automated backups + PITR; Postgres RLS by firm_id.
 

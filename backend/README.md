@@ -6,7 +6,7 @@ Phase 2. FastAPI + Postgres sync API for Ledgerly (see `docs/design-spec.md`, Se
 
 Built so far, all TDD'd against a real Postgres testcontainer (no mocked database):
 
-- `GET /healthz`
+- `GET /status`
 - `POST /auth/register` — takes the firm and device this account's owner already created on
   their first device (ids are made on the device, never by the server — see
   `docs/design-spec.md` Section 2), plus their name/email/password. Creates the user (server
@@ -81,7 +81,7 @@ method for the personal GCP project; nothing about the code differs either way, 
    `render.yaml` at the repo root and creates the service, asking only for
    `LEDGERLY_DATABASE_URL` (paste the same Neon connection string) — `LEDGERLY_JWT_SECRET` is
    generated automatically.
-3. Once deployed, `https://<service>.onrender.com/healthz` should return `{"status": "ok"}`. The
+3. Once deployed, `https://<service>.onrender.com/status` should return `{"status": "ok"}`. The
    free plan spins the service down after 15 minutes of no traffic; the first request after that
    takes a few seconds to wake it back up — the app's Sync now button will just look slow that
    one time, not broken.
