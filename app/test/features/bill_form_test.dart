@@ -276,4 +276,72 @@ void main() {
     },
     variant: phoneOnly,
   );
+
+  testWidgets(
+    'at phone width, tapping the on-screen Save button saves a valid walk-in sale',
+    (tester) async {
+      await pumpLedgerly(
+        tester,
+        seed: seedFirmWithItem,
+        viewSize: const Size(390, 844),
+      );
+      await tester.tap(find.byKey(const Key('shell.fab.newSale')));
+      await tester.pumpAndSettle();
+
+      // Walk-in skips the customer requirement -- the shortest path to a
+      // valid sale, avoiding EntityAutocomplete's touch keyboard entirely.
+      await tester.tap(find.byKey(const Key('bill.walkIn')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('bill.line.0.card.itemButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Oil'));
+      await tester.pumpAndSettle();
+
+      await typeInto(tester, const Key('bill.line.0.card.bags'), '10');
+      await typeInto(tester, const Key('bill.line.0.card.rate'), '9000');
+
+      // The Save/Cancel row sits at the end of the scrollable form content,
+      // below the fold on a phone-height viewport -- a real touch user
+      // scrolls to it the same way.
+      await tester.dragUntilVisible(
+        find.byKey(const Key('bill.compactSave')),
+        find.byType(ListView),
+        const Offset(0, -300),
+      );
+      await tester.tap(find.byKey(const Key('bill.compactSave')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('bill.saved')), findsOneWidget);
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'at phone width, tapping Cancel on a dirty unsaved bill asks before discarding',
+    (tester) async {
+      await pumpLedgerly(
+        tester,
+        seed: seedFirmOnly,
+        viewSize: const Size(390, 844),
+      );
+      await tester.tap(find.byKey(const Key('shell.fab.newSale')));
+      await tester.pumpAndSettle();
+
+      await typeInto(tester, const Key('bill.description'), 'Sept supply');
+
+      // Same below-the-fold reasoning as the Save test above.
+      await tester.dragUntilVisible(
+        find.byKey(const Key('bill.compactCancel')),
+        find.byType(ListView),
+        const Offset(0, -300),
+      );
+      await tester.tap(find.byKey(const Key('bill.compactCancel')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('bill.screen')), findsOneWidget);
+      expect(find.byKey(const Key('bill.discardDialog')), findsOneWidget);
+    },
+    variant: phoneOnly,
+  );
 }

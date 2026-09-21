@@ -214,12 +214,47 @@ class _BillScreenState extends ConsumerState<BillScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                if (d.saved case final saved?)
+                if (d.saved case final saved?) ...[
                   _SavedBanner(
                     saved: saved,
                     customer: d.customer,
                     balance: balance,
                   ),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      if (constraints.maxWidth >= kCompactBreakpoint) {
+                        // Desktop already has Ctrl+P/Ctrl+N/Esc for this,
+                        // shown in the key bar -- no on-screen equivalent
+                        // needed there.
+                        return const SizedBox.shrink();
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            OutlinedButton(
+                              key: const Key('bill.compactPrint'),
+                              onPressed: () {
+                                final firm = ref.read(openFirmProvider).value;
+                                if (firm != null) {
+                                  printSlip(ref, firm, saved.id);
+                                }
+                              },
+                              child: const Text('Print'),
+                            ),
+                            const SizedBox(width: 8),
+                            FilledButton(
+                              key: const Key('bill.compactBack'),
+                              onPressed: () => _escape(d),
+                              child: const Text('Back'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ],
                 if (d.saved == null) ...[
                   _Header(
                     d: d,
@@ -277,6 +312,35 @@ class _BillScreenState extends ConsumerState<BillScreen> {
                       padding: const EdgeInsets.only(top: 10),
                       child: Text(e, style: TextStyle(color: c.giveable)),
                     ),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      if (constraints.maxWidth >= kCompactBreakpoint) {
+                        // Desktop already has Ctrl+Enter/Esc for this,
+                        // shown in the key bar -- no on-screen equivalent
+                        // needed there.
+                        return const SizedBox.shrink();
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 14),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            TextButton(
+                              key: const Key('bill.compactCancel'),
+                              onPressed: () => _escape(d),
+                              child: const Text('Cancel'),
+                            ),
+                            const SizedBox(width: 8),
+                            FilledButton(
+                              key: const Key('bill.compactSave'),
+                              onPressed: _save,
+                              child: const Text('Save'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                 ],
               ],
             ),
