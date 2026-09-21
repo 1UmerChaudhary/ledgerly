@@ -325,13 +325,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             onChanged: (v) => _toggle(showPaisa: v),
                           ),
                           const SizedBox(width: 8),
-                          // Expanded here is a no-op at the wide 520px field
-                          // width (the text is far shorter and left-aligned
-                          // either way) but stops it forcing extra Row width
-                          // below kCompactBreakpoint, where the field no
-                          // longer has a fixed 520px box to sit in.
-                          Expanded(
-                            child: Text(
+                          // Above kCompactBreakpoint this Text is unchanged.
+                          // Below it, the field no longer has a fixed 520px
+                          // box to sit in -- Expanded stops it forcing extra
+                          // Row width there, same compact ? ... : ...
+                          // gating as this file's other sites.
+                          if (compact)
+                            Expanded(
+                              child: Text(
+                                firm?.showPaisa ?? false
+                                    ? 'Rs 6,02,835.72'
+                                    : 'Rs 6,02,836 (whole rupees)',
+                                style: numberStyle.copyWith(
+                                  fontSize: 13,
+                                  color: c.ink2,
+                                ),
+                              ),
+                            )
+                          else
+                            Text(
                               firm?.showPaisa ?? false
                                   ? 'Rs 6,02,835.72'
                                   : 'Rs 6,02,836 (whole rupees)',
@@ -340,7 +352,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                 color: c.ink2,
                               ),
                             ),
-                          ),
                         ],
                       ),
                       compact: compact,
