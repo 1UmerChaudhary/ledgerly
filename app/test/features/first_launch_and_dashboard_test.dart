@@ -349,4 +349,67 @@ void main() {
 
     expect(find.byType(FloatingActionButton), findsNothing);
   }, variant: phoneOnly);
+
+  testWidgets(
+    'at phone width, the cash-sales tab FAB opens a chooser and "Cash in" opens the cash-in form',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: (db, ctx) async {
+          await FirmSetup(db, ctx)
+              .createFirm(name: 'Test Firm', contactNumber: '0300');
+        },
+        viewSize: const Size(390, 844),
+      );
+      container.read(routerProvider).go('/cash-sales');
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('shell.fab.cashChooser')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('shell.fab.cashChooser')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('shell.cashChooserDialog')), findsOneWidget);
+      expect(
+        find.byKey(const Key('shell.cashChooserDialog.cashIn')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('shell.cashChooserDialog.cashOut')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.byKey(const Key('shell.cashChooserDialog.cashIn')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('shell.cashChooserDialog')), findsNothing);
+      expect(find.text('CASH RECEIVED'), findsOneWidget); // type=cash_in
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'at phone width, the cash-sales tab FAB chooser\'s "Cash out" opens the cash-out form',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: (db, ctx) async {
+          await FirmSetup(db, ctx)
+              .createFirm(name: 'Test Firm', contactNumber: '0300');
+        },
+        viewSize: const Size(390, 844),
+      );
+      container.read(routerProvider).go('/cash-sales');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('shell.fab.cashChooser')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('shell.cashChooserDialog.cashOut')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('CASH PAID'), findsOneWidget); // type=cash_out
+    },
+    variant: phoneOnly,
+  );
 }
