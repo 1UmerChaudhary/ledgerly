@@ -6,6 +6,7 @@ import 'package:ledgerly_core/ledgerly_core.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 
 import '../../bootstrap/providers.dart';
+import '../../shell/breakpoints.dart';
 import '../../theme/ledgerly_theme.dart';
 import '../bills/bill_draft.dart';
 import '../dashboard/dashboard_screen.dart';
@@ -87,78 +88,109 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
       child: Padding(
         key: const Key('customer.form'),
         padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
-        child: SizedBox(
-          width: 560,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'NEW CUSTOMER',
-                style: TextStyle(
-                  fontSize: 11,
-                  letterSpacing: 1,
-                  fontWeight: FontWeight.w600,
-                  color: c.ink3,
-                ),
-              ),
-              const SizedBox(height: 14),
-              _field(
-                'Name',
-                TextField(
-                  key: const Key('customer.name'),
-                  controller: _name,
-                  autofocus: true,
-                  onChanged: _checkSimilar,
-                ),
-              ),
-              if (_similar.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(left: 130, bottom: 8),
-                  child: Text(
-                    'Similar: ${_similar.map((s) => s.name).join(', ')}',
-                    style: TextStyle(fontSize: 12.5, color: c.giveable),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // The 560px fixed width and label-then-field Row below fit the
+            // desktop form; below kCompactBreakpoint they'd overflow a phone
+            // viewport (~390px), so the form takes the available width and
+            // each field's label stacks above it instead, same convention
+            // as bill_screen.dart's _Header compact split.
+            final compact = constraints.maxWidth < kCompactBreakpoint;
+            final content = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'NEW CUSTOMER',
+                  style: TextStyle(
+                    fontSize: 11,
+                    letterSpacing: 1,
+                    fontWeight: FontWeight.w600,
+                    color: c.ink3,
                   ),
                 ),
-              _field(
-                'Phone',
-                TextField(
-                  key: const Key('customer.phone'),
-                  controller: _phone,
-                  style: numberStyle.copyWith(fontSize: 14),
-                  decoration: const InputDecoration(hintText: '0300-1234567'),
+                const SizedBox(height: 14),
+                _field(
+                  'Name',
+                  TextField(
+                    key: const Key('customer.name'),
+                    controller: _name,
+                    autofocus: true,
+                    onChanged: _checkSimilar,
+                  ),
+                  compact: compact,
                 ),
-              ),
-              _field(
-                'Notes',
-                TextField(key: const Key('customer.notes'), controller: _notes),
-              ),
-              if (_error case final e?)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(e, style: TextStyle(color: c.giveable)),
+                if (_similar.isNotEmpty)
+                  Padding(
+                    padding: EdgeInsets.only(
+                      left: compact ? 0 : 130,
+                      bottom: 8,
+                    ),
+                    child: Text(
+                      'Similar: ${_similar.map((s) => s.name).join(', ')}',
+                      style: TextStyle(fontSize: 12.5, color: c.giveable),
+                    ),
+                  ),
+                _field(
+                  'Phone',
+                  TextField(
+                    key: const Key('customer.phone'),
+                    controller: _phone,
+                    style: numberStyle.copyWith(fontSize: 14),
+                    decoration: const InputDecoration(
+                      hintText: '0300-1234567',
+                    ),
+                  ),
+                  compact: compact,
                 ),
-              const SizedBox(height: 16),
-              Text(
-                'Ctrl+Enter save · Esc back',
-                style: TextStyle(fontSize: 12.5, color: c.ink3),
-              ),
-            ],
-          ),
+                _field(
+                  'Notes',
+                  TextField(
+                    key: const Key('customer.notes'),
+                    controller: _notes,
+                  ),
+                  compact: compact,
+                ),
+                if (_error case final e?)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(e, style: TextStyle(color: c.giveable)),
+                  ),
+                const SizedBox(height: 16),
+                Text(
+                  'Ctrl+Enter save · Esc back',
+                  style: TextStyle(fontSize: 12.5, color: c.ink3),
+                ),
+              ],
+            );
+            return compact ? content : SizedBox(width: 560, child: content);
+          },
         ),
       ),
     );
   }
 
-  Widget _field(String label, Widget child) => Padding(
-    padding: const EdgeInsets.only(bottom: 10),
-    child: Row(
-      children: [
-        SizedBox(
-          width: 130,
-          child: Text(label, style: TextStyle(color: context.colors.ink2)),
+  Widget _field(String label, Widget child, {required bool compact}) {
+    final labelWidget = Text(
+      label,
+      style: TextStyle(color: context.colors.ink2),
+    );
+    if (compact) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [labelWidget, const SizedBox(height: 4), child],
         ),
-        Expanded(child: child),
-      ],
-    ),
-  );
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          SizedBox(width: 130, child: labelWidget),
+          Expanded(child: child),
+        ],
+      ),
+    );
+  }
 }

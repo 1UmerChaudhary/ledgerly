@@ -1001,124 +1001,133 @@ class _Totals extends StatelessWidget {
     final effect = d.signedEffect;
     final after = balance != null && effect != null ? balance! + effect : null;
     final noun = d.hasLines ? 'after this bill' : 'after this';
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: c.paper,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: d.isWalkIn
-                ? Text(
-                    'Walk-in cash sale — not tracked in any customer ledger.',
-                    style: TextStyle(color: c.ink3),
-                  )
-                : d.customer == null
-                ? Text(
-                    'Pick a customer to see the balance change.',
-                    style: TextStyle(color: c.ink3),
-                  )
-                : Wrap(
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Text(
-                        '${d.customer!.name} ',
-                        style: TextStyle(color: c.ink2),
-                      ),
-                      if (balance != null)
-                        Text(
-                          _owesPhrase(balance!),
-                          style: numberStyle.copyWith(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      if (after != null) ...[
-                        Text('  →  ', style: TextStyle(color: c.ink3)),
-                        Text(
-                          '$noun ${_owesPhrase(after)}',
-                          style: numberStyle.copyWith(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: after.isNegative ? c.giveable : c.receivable,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-          ),
-        ),
-        const SizedBox(width: 16),
-        SizedBox(
-          width: 320,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (d.hasLines) ...[
-                _kv(
-                  context,
-                  'Calculated total',
+    final balanceBox = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: c.paper,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: d.isWalkIn
+          ? Text(
+              'Walk-in cash sale — not tracked in any customer ledger.',
+              style: TextStyle(color: c.ink3),
+            )
+          : d.customer == null
+          ? Text(
+              'Pick a customer to see the balance change.',
+              style: TextStyle(color: c.ink3),
+            )
+          : Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text('${d.customer!.name} ', style: TextStyle(color: c.ink2)),
+                if (balance != null)
                   Text(
-                    formatMoney(d.calculatedTotal, symbol: false),
-                    style: numberStyle.copyWith(fontSize: 13.5),
-                  ),
-                ),
-                _kv(
-                  context,
-                  'Override total',
-                  SizedBox(
-                    width: 130,
-                    child: TextField(
-                      key: const Key('bill.override'),
-                      textAlign: TextAlign.right,
-                      style: numberStyle.copyWith(fontSize: 13.5),
-                      onChanged: onOverride,
-                      decoration: const InputDecoration(
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 6,
-                        ),
-                        isDense: true,
-                      ),
+                    _owesPhrase(balance!),
+                    style: numberStyle.copyWith(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
-                ),
+                if (after != null) ...[
+                  Text('  →  ', style: TextStyle(color: c.ink3)),
+                  Text(
+                    '$noun ${_owesPhrase(after)}',
+                    style: numberStyle.copyWith(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: after.isNegative ? c.giveable : c.receivable,
+                    ),
+                  ),
+                ],
               ],
-              Container(
-                margin: const EdgeInsets.only(top: 6),
-                padding: const EdgeInsets.only(top: 6),
-                decoration: BoxDecoration(
-                  border: Border(top: BorderSide(color: c.ink)),
+            ),
+    );
+    final totalsBox = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (d.hasLines) ...[
+          _kv(
+            context,
+            'Calculated total',
+            Text(
+              formatMoney(d.calculatedTotal, symbol: false),
+              style: numberStyle.copyWith(fontSize: 13.5),
+            ),
+          ),
+          _kv(
+            context,
+            'Override total',
+            SizedBox(
+              width: 130,
+              child: TextField(
+                key: const Key('bill.override'),
+                textAlign: TextAlign.right,
+                style: numberStyle.copyWith(fontSize: 13.5),
+                onChanged: onOverride,
+                decoration: const InputDecoration(
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
+                  isDense: true,
                 ),
-                child: Row(
-                  children: [
-                    Text(
-                      d.hasLines ? 'FINAL' : 'AMOUNT',
-                      style: TextStyle(
-                        fontSize: 11,
-                        letterSpacing: .8,
-                        fontWeight: FontWeight.w600,
-                        color: c.ink2,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      formatMoney(d.finalAmount),
-                      style: numberStyle.copyWith(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
+              ),
+            ),
+          ),
+        ],
+        Container(
+          margin: const EdgeInsets.only(top: 6),
+          padding: const EdgeInsets.only(top: 6),
+          decoration: BoxDecoration(
+            border: Border(top: BorderSide(color: c.ink)),
+          ),
+          child: Row(
+            children: [
+              Text(
+                d.hasLines ? 'FINAL' : 'AMOUNT',
+                style: TextStyle(
+                  fontSize: 11,
+                  letterSpacing: .8,
+                  fontWeight: FontWeight.w600,
+                  color: c.ink2,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                formatMoney(d.finalAmount),
+                style: numberStyle.copyWith(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
           ),
         ),
       ],
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // The 320px-wide totals box is a fixed desktop sidebar -- on a phone
+        // viewport the remaining Expanded sliver for the balance text
+        // shrinks to a few pixels and wraps character-by-character. Below
+        // kCompactBreakpoint the two boxes stack instead, same convention as
+        // this file's other compact/wide splits.
+        if (constraints.maxWidth < kCompactBreakpoint) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [balanceBox, const SizedBox(height: 12), totalsBox],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(child: balanceBox),
+            const SizedBox(width: 16),
+            SizedBox(width: 320, child: totalsBox),
+          ],
+        );
+      },
     );
   }
 

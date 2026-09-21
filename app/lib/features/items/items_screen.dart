@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:ledgerly_core/ledgerly_core.dart';
 
 import '../../bootstrap/providers.dart';
+import '../../shell/breakpoints.dart';
 import '../../theme/ledgerly_theme.dart';
 import '../bills/bill_draft.dart';
 
@@ -237,76 +238,99 @@ class _ItemFormScreenState extends ConsumerState<ItemFormScreen> {
       child: Padding(
         key: const Key('item.form'),
         padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
-        child: SizedBox(
-          width: 560,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'NEW ITEM',
-                style: TextStyle(
-                  fontSize: 11,
-                  letterSpacing: 1,
-                  fontWeight: FontWeight.w600,
-                  color: c.ink3,
-                ),
-              ),
-              const SizedBox(height: 14),
-              _field(
-                'Name',
-                TextField(
-                  key: const Key('item.name'),
-                  controller: _name,
-                  autofocus: true,
-                ),
-              ),
-              _field(
-                'Usual bag kg',
-                TextField(
-                  key: const Key('item.bagKg'),
-                  controller: _bagKg,
-                  style: numberStyle.copyWith(fontSize: 14),
-                  decoration: const InputDecoration(hintText: 'e.g. 50'),
-                ),
-              ),
-              _field(
-                'Rate per kg',
-                TextField(
-                  key: const Key('item.base'),
-                  controller: _base,
-                  style: numberStyle.copyWith(fontSize: 14),
-                  decoration: const InputDecoration(
-                    hintText: '30 · 34 · 37.324 · 40 · 56',
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Same fix as customer_form_screen.dart: the 560px fixed width
+            // and label-then-field Row fit the desktop form but overflow a
+            // phone viewport (~390px), so below kCompactBreakpoint the form
+            // takes the available width and each field's label stacks above
+            // it, matching bill_screen.dart's _Header compact split.
+            final compact = constraints.maxWidth < kCompactBreakpoint;
+            final content = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'NEW ITEM',
+                  style: TextStyle(
+                    fontSize: 11,
+                    letterSpacing: 1,
+                    fontWeight: FontWeight.w600,
+                    color: c.ink3,
                   ),
                 ),
-              ),
-              if (_error case final e?)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(e, style: TextStyle(color: c.giveable)),
+                const SizedBox(height: 14),
+                _field(
+                  'Name',
+                  TextField(
+                    key: const Key('item.name'),
+                    controller: _name,
+                    autofocus: true,
+                  ),
+                  compact: compact,
                 ),
-              const SizedBox(height: 16),
-              Text(
-                'Ctrl+Enter save · Esc back',
-                style: TextStyle(fontSize: 12.5, color: c.ink3),
-              ),
-            ],
-          ),
+                _field(
+                  'Usual bag kg',
+                  TextField(
+                    key: const Key('item.bagKg'),
+                    controller: _bagKg,
+                    style: numberStyle.copyWith(fontSize: 14),
+                    decoration: const InputDecoration(hintText: 'e.g. 50'),
+                  ),
+                  compact: compact,
+                ),
+                _field(
+                  'Rate per kg',
+                  TextField(
+                    key: const Key('item.base'),
+                    controller: _base,
+                    style: numberStyle.copyWith(fontSize: 14),
+                    decoration: const InputDecoration(
+                      hintText: '30 · 34 · 37.324 · 40 · 56',
+                    ),
+                  ),
+                  compact: compact,
+                ),
+                if (_error case final e?)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(e, style: TextStyle(color: c.giveable)),
+                  ),
+                const SizedBox(height: 16),
+                Text(
+                  'Ctrl+Enter save · Esc back',
+                  style: TextStyle(fontSize: 12.5, color: c.ink3),
+                ),
+              ],
+            );
+            return compact ? content : SizedBox(width: 560, child: content);
+          },
         ),
       ),
     );
   }
 
-  Widget _field(String label, Widget child) => Padding(
-    padding: const EdgeInsets.only(bottom: 10),
-    child: Row(
-      children: [
-        SizedBox(
-          width: 130,
-          child: Text(label, style: TextStyle(color: context.colors.ink2)),
+  Widget _field(String label, Widget child, {required bool compact}) {
+    final labelWidget = Text(
+      label,
+      style: TextStyle(color: context.colors.ink2),
+    );
+    if (compact) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [labelWidget, const SizedBox(height: 4), child],
         ),
-        Expanded(child: child),
-      ],
-    ),
-  );
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          SizedBox(width: 130, child: labelWidget),
+          Expanded(child: child),
+        ],
+      ),
+    );
+  }
 }
