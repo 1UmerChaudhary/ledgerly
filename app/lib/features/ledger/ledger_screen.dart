@@ -371,64 +371,75 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
         Money.zero;
     final selectedIndex = entries.isEmpty ? 0 : _effective(entries);
     final selected = entries.isEmpty ? null : entries[selectedIndex];
-    // Single source of truth for this whole screen's phone/desktop split —
-    // the header, the side panel's visibility, and the table's row layout
-    // all key off this one flag instead of each re-measuring independently.
-    final compact = MediaQuery.of(context).size.width < kCompactBreakpoint;
 
-    return Focus(
-      focusNode: _focus,
-      autofocus: true,
-      onKeyEvent: (n, e) => _onKey(n, e, entries),
-      child: Padding(
-        key: const Key('ledger.screen'),
-        padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildHeader(customer, balance, compact),
-            const SizedBox(height: 14),
-            Expanded(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: _LedgerTable(
-                      entries: entries,
-                      selected: selectedIndex,
-                      compact: compact,
-                      onTap: (i) {
-                        if (compact) {
-                          context.go(
-                            '/customers/${widget.customerId}/bills/${entries[i].bill.id}',
-                          );
-                        } else {
-                          setState(() => _selected = i);
-                        }
-                      },
-                    ),
+    // Measured from the constraints this screen is actually handed, not from
+    // MediaQuery's window width: above kCompactBreakpoint AppShell puts a
+    // 96px rail beside the content, so a 640dp window leaves ~544dp here.
+    // MediaQuery said "not compact" for the whole 600-699dp band (foldable
+    // inner displays, Android split-screen, a narrow desktop window) and the
+    // desktop Row layout below then overflowed. Still derived once for the
+    // whole screen -- header, side panel and table row layout all key off
+    // this one flag rather than each re-measuring independently.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < kCompactBreakpoint;
+        return Focus(
+          focusNode: _focus,
+          autofocus: true,
+          onKeyEvent: (n, e) => _onKey(n, e, entries),
+          child: Padding(
+            key: const Key('ledger.screen'),
+            padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildHeader(customer, balance, compact),
+                const SizedBox(height: 14),
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: _LedgerTable(
+                          entries: entries,
+                          selected: selectedIndex,
+                          compact: compact,
+                          onTap: (i) {
+                            if (compact) {
+                              context.go(
+                                '/customers/${widget.customerId}/bills/${entries[i].bill.id}',
+                              );
+                            } else {
+                              setState(() => _selected = i);
+                            }
+                          },
+                        ),
+                      ),
+                      if (!compact) ...[
+                        const SizedBox(width: 16),
+                        SizedBox(
+                          width: 340,
+                          child: selected == null
+                              ? const SizedBox.shrink()
+                              : LedgerDetailPanel(
+                                  entry: selected,
+                                  itemNames: itemNames,
+                                  selectedHistoryVersion:
+                                      _selectedHistoryVersion,
+                                  onSelectHistory: (v) => setState(
+                                    () => _selectedHistoryVersion = v,
+                                  ),
+                                ),
+                        ),
+                      ],
+                    ],
                   ),
-                  if (!compact) ...[
-                    const SizedBox(width: 16),
-                    SizedBox(
-                      width: 340,
-                      child: selected == null
-                          ? const SizedBox.shrink()
-                          : LedgerDetailPanel(
-                              entry: selected,
-                              itemNames: itemNames,
-                              selectedHistoryVersion: _selectedHistoryVersion,
-                              onSelectHistory: (v) =>
-                                  setState(() => _selectedHistoryVersion = v),
-                            ),
-                    ),
-                  ],
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

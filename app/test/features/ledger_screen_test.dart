@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ledgerly/bootstrap/router.dart';
 import 'package:ledgerly/features/ledger/ledger_screen.dart';
 import 'package:ledgerly_core/ledgerly_core.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
@@ -222,6 +223,29 @@ void main() {
       expect(find.byKey(const Key('dashboard.search')), findsNothing);
     },
     variant: phoneOnly,
+  );
+
+  testWidgets(
+    'ledger screen renders without overflow at a 640dp window, where the '
+    "96px rail leaves the screen itself under the breakpoint",
+    (tester) async {
+      // The 600-699dp band -- a foldable inner display, Android split-screen
+      // / multi-window, or a narrow desktop window. MediaQuery reports the
+      // whole window (640 >= 600, "not compact") but AppShell's rail takes
+      // 96px first, so the ledger really has ~544dp: the desktop Row layout
+      // overflowed here and no test covered the band.
+      final container = await pumpLedgerly(
+        tester,
+        seed: seedLedger,
+        viewSize: const Size(640, 800),
+      );
+      container.read(routerProvider).go('/customers/$rashidId');
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('ledger.screen')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+    variant: windowsOnly,
   );
 
   _showDeletedTests();

@@ -32,10 +32,6 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    // Single source of truth for this screen's phone/desktop header split --
-    // matches ledger_screen.dart/dashboard_screen.dart's convention of
-    // deriving it once from MediaQuery rather than a local LayoutBuilder.
-    final compact = MediaQuery.of(context).size.width < kCompactBreakpoint;
     final all = ref.watch(customersListProvider).value ?? const <Customer>[];
     final balances = {
       for (final r
@@ -50,142 +46,157 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
             byName.keys,
           ).map((h) => byName[h.value]!).toList();
 
-    return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.keyN, control: true): () =>
-            context.go('/customers/new'),
-      },
-      child: Focus(
-        onKeyEvent: (node, e) {
-          if (e is! KeyDownEvent || visible.isEmpty) {
-            return KeyEventResult.ignored;
-          }
-          if (e.logicalKey == LogicalKeyboardKey.arrowDown) {
-            setState(
-              () => _selected = (_selected + 1).clamp(0, visible.length - 1),
-            );
-            return KeyEventResult.handled;
-          }
-          if (e.logicalKey == LogicalKeyboardKey.arrowUp) {
-            setState(
-              () => _selected = (_selected - 1).clamp(0, visible.length - 1),
-            );
-            return KeyEventResult.handled;
-          }
-          if (e.logicalKey == LogicalKeyboardKey.enter ||
-              e.logicalKey == LogicalKeyboardKey.numpadEnter) {
-            context.go(
-              '/customers/${visible[_selected.clamp(0, visible.length - 1)].id}',
-            );
-            return KeyEventResult.handled;
-          }
-          return KeyEventResult.ignored;
-        },
-        child: Padding(
-          key: const Key('customers.screen'),
-          padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildHeader(context, compact, all.length),
-              const SizedBox(height: 10),
-              TextField(
-                key: const Key('customers.search'),
-                controller: _search,
-                autofocus: true,
-                onChanged: (v) => setState(() {
-                  _query = v;
-                  _selected = 0;
-                }),
-                decoration: const InputDecoration(
-                  hintText: 'Search by name or phone',
-                  prefixIcon: Icon(Icons.search, size: 18),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: c.rule),
-                    borderRadius: BorderRadius.circular(4),
-                    color: c.surface,
+    // Measured from the constraints this screen is handed, not MediaQuery's
+    // window width: above kCompactBreakpoint AppShell puts a 96px rail
+    // beside the content, so a 640dp window leaves ~544dp here -- the
+    // 600-699dp band where MediaQuery said "not compact" and the fixed
+    // pixel columns below then overflowed. Still derived once for the whole
+    // screen, so header and rows can never disagree.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < kCompactBreakpoint;
+        return CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.keyN, control: true): () =>
+                context.go('/customers/new'),
+          },
+          child: Focus(
+            onKeyEvent: (node, e) {
+              if (e is! KeyDownEvent || visible.isEmpty) {
+                return KeyEventResult.ignored;
+              }
+              if (e.logicalKey == LogicalKeyboardKey.arrowDown) {
+                setState(
+                  () =>
+                      _selected = (_selected + 1).clamp(0, visible.length - 1),
+                );
+                return KeyEventResult.handled;
+              }
+              if (e.logicalKey == LogicalKeyboardKey.arrowUp) {
+                setState(
+                  () =>
+                      _selected = (_selected - 1).clamp(0, visible.length - 1),
+                );
+                return KeyEventResult.handled;
+              }
+              if (e.logicalKey == LogicalKeyboardKey.enter ||
+                  e.logicalKey == LogicalKeyboardKey.numpadEnter) {
+                context.go(
+                  '/customers/${visible[_selected.clamp(0, visible.length - 1)].id}',
+                );
+                return KeyEventResult.handled;
+              }
+              return KeyEventResult.ignored;
+            },
+            child: Padding(
+              key: const Key('customers.screen'),
+              padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildHeader(context, compact, all.length),
+                  const SizedBox(height: 10),
+                  TextField(
+                    key: const Key('customers.search'),
+                    controller: _search,
+                    autofocus: true,
+                    onChanged: (v) => setState(() {
+                      _query = v;
+                      _selected = 0;
+                    }),
+                    decoration: const InputDecoration(
+                      hintText: 'Search by name or phone',
+                      prefixIcon: Icon(Icons.search, size: 18),
+                    ),
                   ),
-                  child: ListView.builder(
-                    itemCount: visible.length,
-                    itemBuilder: (context, i) {
-                      final cu = visible[i];
-                      final b = balances[cu.id] ?? Money.zero;
-                      final sel = i == _selected;
-                      return InkWell(
-                        key: const Key('customers.row'),
-                        onTap: () => context.go('/customers/${cu.id}'),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: sel ? c.selection : null,
-                            border: Border(
-                              left: BorderSide(
-                                color: sel ? c.accent : Colors.transparent,
-                                width: 3,
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: c.rule),
+                        borderRadius: BorderRadius.circular(4),
+                        color: c.surface,
+                      ),
+                      child: ListView.builder(
+                        itemCount: visible.length,
+                        itemBuilder: (context, i) {
+                          final cu = visible[i];
+                          final b = balances[cu.id] ?? Money.zero;
+                          final sel = i == _selected;
+                          return InkWell(
+                            key: const Key('customers.row'),
+                            onTap: () => context.go('/customers/${cu.id}'),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 8,
                               ),
-                              bottom: BorderSide(color: c.ruleSoft),
+                              decoration: BoxDecoration(
+                                color: sel ? c.selection : null,
+                                border: Border(
+                                  left: BorderSide(
+                                    color: sel ? c.accent : Colors.transparent,
+                                    width: 3,
+                                  ),
+                                  bottom: BorderSide(color: c.ruleSoft),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      cu.name,
+                                      // A long name has nowhere near enough
+                                      // room next to the two fixed phone/
+                                      // balance columns -- without this it
+                                      // wraps character-by-character down the
+                                      // row instead of truncating cleanly.
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1,
+                                      style: const TextStyle(fontSize: 13.5),
+                                    ),
+                                  ),
+                                  SizedBox(
+                                    width: 160,
+                                    child: Text(
+                                      cu.phone ?? '',
+                                      style: numberStyle.copyWith(
+                                        fontSize: 12.5,
+                                        color: c.ink2,
+                                      ),
+                                    ),
+                                  ),
+                                  SizedBox(
+                                    width: 140,
+                                    child: Text(
+                                      b.isZero
+                                          ? '—'
+                                          : '${b.isNegative ? 'is owed' : 'owes'} ${formatMoney(b.abs(), symbol: false)}',
+                                      textAlign: TextAlign.right,
+                                      style: numberStyle.copyWith(
+                                        fontSize: 13,
+                                        color: b.isNegative
+                                            ? c.giveable
+                                            : (b.isZero
+                                                  ? c.ink3
+                                                  : c.receivable),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  cu.name,
-                                  // A long name has nowhere near enough
-                                  // room next to the two fixed phone/
-                                  // balance columns -- without this it
-                                  // wraps character-by-character down the
-                                  // row instead of truncating cleanly.
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                  style: const TextStyle(fontSize: 13.5),
-                                ),
-                              ),
-                              SizedBox(
-                                width: 160,
-                                child: Text(
-                                  cu.phone ?? '',
-                                  style: numberStyle.copyWith(
-                                    fontSize: 12.5,
-                                    color: c.ink2,
-                                  ),
-                                ),
-                              ),
-                              SizedBox(
-                                width: 140,
-                                child: Text(
-                                  b.isZero
-                                      ? '—'
-                                      : '${b.isNegative ? 'is owed' : 'owes'} ${formatMoney(b.abs(), symbol: false)}',
-                                  textAlign: TextAlign.right,
-                                  style: numberStyle.copyWith(
-                                    fontSize: 13,
-                                    color: b.isNegative
-                                        ? c.giveable
-                                        : (b.isZero ? c.ink3 : c.receivable),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
+                          );
+                        },
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 

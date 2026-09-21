@@ -256,6 +256,30 @@ void main() {
   );
 
   testWidgets(
+    'customers and items lists render without overflow at a 640dp window, '
+    'where the 96px rail leaves each screen itself under the breakpoint',
+    (tester) async {
+      // Same 600-699dp band as the ledger regression test: MediaQuery said
+      // "not compact" for the window while the screen itself had ~544dp.
+      final container = await pumpLedgerly(
+        tester,
+        seed: seed,
+        viewSize: const Size(640, 800),
+      );
+      container.read(routerProvider).go('/customers');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('customers.screen')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      container.read(routerProvider).go('/items');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('items.screen')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
     'at phone width, the system back gesture from the new-customer form '
     'returns to the customers list, not the dashboard',
     (tester) async {

@@ -16,9 +16,6 @@ class ItemsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
     final items = ref.watch(itemsListProvider).value ?? const <Item>[];
-    // Single source of truth for this screen's phone/desktop split, same
-    // convention as customers_screen.dart/ledger_screen.dart.
-    final compact = MediaQuery.of(context).size.width < kCompactBreakpoint;
     TextStyle head() => TextStyle(
       fontSize: 11,
       letterSpacing: .6,
@@ -32,156 +29,173 @@ class ItemsScreen extends ConsumerWidget {
     // proportional Expanded slice instead of a fixed pixel width, so the
     // Row always exactly fills the available width; above it, the
     // SizedBox widths are unchanged.
-    Widget col(Widget child, {required double width, required int flex}) =>
-        compact
-        ? Expanded(flex: flex, child: child)
-        : SizedBox(width: width, child: child);
-    return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.keyN, control: true): () =>
-            context.go('/items/new'),
-      },
-      child: Focus(
-        autofocus: true,
-        child: Padding(
-          key: const Key('items.screen'),
-          padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildTitleRow(context, compact, items.length),
-              const SizedBox(height: 12),
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: c.rule),
-                    borderRadius: BorderRadius.circular(4),
-                    color: c.surface,
-                  ),
-                  child: Column(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 7,
-                        ),
-                        decoration: BoxDecoration(
-                          border: Border(bottom: BorderSide(color: c.rule)),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              flex: compact ? 3 : 1,
-                              child: Text('NAME', style: head()),
-                            ),
-                            col(
-                              Text(
-                                'BAG KG',
-                                textAlign: TextAlign.right,
-                                style: head(),
-                              ),
-                              width: 120,
-                              flex: 2,
-                            ),
-                            col(
-                              Text(
-                                'RATE PER KG',
-                                textAlign: TextAlign.right,
-                                style: head(),
-                              ),
-                              width: 120,
-                              flex: 2,
-                            ),
-                            col(
-                              Text(
-                                'UNIT',
-                                textAlign: TextAlign.right,
-                                style: head(),
-                              ),
-                              width: 80,
-                              flex: 1,
-                            ),
-                          ],
-                        ),
+    // Measured from the constraints this screen is handed, not MediaQuery's
+    // window width: above kCompactBreakpoint AppShell puts a 96px rail
+    // beside the content, so a 640dp window leaves ~544dp here -- the
+    // 600-699dp band where MediaQuery said "not compact" and the fixed
+    // pixel columns below then overflowed. Still derived once for the whole
+    // screen, so header and rows can never disagree.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < kCompactBreakpoint;
+        Widget col(Widget child, {required double width, required int flex}) =>
+            compact
+            ? Expanded(flex: flex, child: child)
+            : SizedBox(width: width, child: child);
+        return CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.keyN, control: true): () =>
+                context.go('/items/new'),
+          },
+          child: Focus(
+            autofocus: true,
+            child: Padding(
+              key: const Key('items.screen'),
+              padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildTitleRow(context, compact, items.length),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: c.rule),
+                        borderRadius: BorderRadius.circular(4),
+                        color: c.surface,
                       ),
-                      Expanded(
-                        child: ListView.builder(
-                          itemCount: items.length,
-                          itemBuilder: (context, idx) {
-                            final i = items[idx];
-                            return Container(
-                              key: const Key('items.row'),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                border: Border(
-                                  bottom: BorderSide(color: c.ruleSoft),
+                      child: Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 7,
+                            ),
+                            decoration: BoxDecoration(
+                              border: Border(bottom: BorderSide(color: c.rule)),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  flex: compact ? 3 : 1,
+                                  child: Text('NAME', style: head()),
                                 ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    flex: compact ? 3 : 1,
-                                    child: Text(
-                                      i.name,
-                                      overflow: TextOverflow.ellipsis,
-                                      maxLines: 1,
-                                      style: const TextStyle(fontSize: 13.5),
+                                col(
+                                  Text(
+                                    'BAG KG',
+                                    textAlign: TextAlign.right,
+                                    style: head(),
+                                  ),
+                                  width: 120,
+                                  flex: 2,
+                                ),
+                                col(
+                                  Text(
+                                    'RATE PER KG',
+                                    textAlign: TextAlign.right,
+                                    style: head(),
+                                  ),
+                                  width: 120,
+                                  flex: 2,
+                                ),
+                                col(
+                                  Text(
+                                    'UNIT',
+                                    textAlign: TextAlign.right,
+                                    style: head(),
+                                  ),
+                                  width: 80,
+                                  flex: 1,
+                                ),
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            child: ListView.builder(
+                              itemCount: items.length,
+                              itemBuilder: (context, idx) {
+                                final i = items[idx];
+                                return Container(
+                                  key: const Key('items.row'),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    border: Border(
+                                      bottom: BorderSide(color: c.ruleSoft),
                                     ),
                                   ),
-                                  col(
-                                    Text(
-                                      i.defaultBagWeight == null
-                                          ? '—'
-                                          : formatKg(i.defaultBagWeight!),
-                                      textAlign: TextAlign.right,
-                                      style: numberStyle.copyWith(fontSize: 13),
-                                    ),
-                                    width: 120,
-                                    flex: 2,
-                                  ),
-                                  col(
-                                    Text(
-                                      i.defaultRateBase == null
-                                          ? '—'
-                                          : formatKg(
-                                              i.defaultRateBase!,
-                                              trim: true,
-                                            ),
-                                      textAlign: TextAlign.right,
-                                      style: numberStyle.copyWith(fontSize: 13),
-                                    ),
-                                    width: 120,
-                                    flex: 2,
-                                  ),
-                                  col(
-                                    Text(
-                                      i.defaultUom.name,
-                                      textAlign: TextAlign.right,
-                                      style: numberStyle.copyWith(
-                                        fontSize: 13,
-                                        color: c.ink2,
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        flex: compact ? 3 : 1,
+                                        child: Text(
+                                          i.name,
+                                          overflow: TextOverflow.ellipsis,
+                                          maxLines: 1,
+                                          style: const TextStyle(
+                                            fontSize: 13.5,
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                    width: 80,
-                                    flex: 1,
+                                      col(
+                                        Text(
+                                          i.defaultBagWeight == null
+                                              ? '—'
+                                              : formatKg(i.defaultBagWeight!),
+                                          textAlign: TextAlign.right,
+                                          style: numberStyle.copyWith(
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                        width: 120,
+                                        flex: 2,
+                                      ),
+                                      col(
+                                        Text(
+                                          i.defaultRateBase == null
+                                              ? '—'
+                                              : formatKg(
+                                                  i.defaultRateBase!,
+                                                  trim: true,
+                                                ),
+                                          textAlign: TextAlign.right,
+                                          style: numberStyle.copyWith(
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                        width: 120,
+                                        flex: 2,
+                                      ),
+                                      col(
+                                        Text(
+                                          i.defaultUom.name,
+                                          textAlign: TextAlign.right,
+                                          style: numberStyle.copyWith(
+                                            fontSize: 13,
+                                            color: c.ink2,
+                                          ),
+                                        ),
+                                        width: 80,
+                                        flex: 1,
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
