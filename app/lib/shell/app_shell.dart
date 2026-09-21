@@ -324,11 +324,19 @@ class _TitleBar extends StatelessWidget {
                 }
               },
             ),
-          Text(
-            firmName,
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          // Expanded + ellipsis rather than a bare Text and a Spacer: a real
+          // firm name ("Al-Madina Oil Mills") plus the backup line and the
+          // device code overflow this Row at phone width, which is the same
+          // RenderFlex overflow the rest of the branch removed everywhere
+          // else. Expanded also does the Spacer's job of pushing the trailing
+          // items right.
+          Expanded(
+            child: Text(
+              firmName,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            ),
           ),
-          const Spacer(),
           if (backup.lastAt case final t?) ...[
             Text(
               'Backed up ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')} ✓',

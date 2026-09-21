@@ -65,6 +65,116 @@ String? compactAmountLabel(Money signed) {
   return null;
 }
 
+/// Re-reads everything a bill change can move: both cached ledger variants
+/// (the show-deleted toggle can flip either way, so the stale one must go
+/// too), the customer's balance, and the dashboard. Top-level rather than a
+/// method, because two screens can now change a bill — the ledger list's
+/// keyboard shortcuts and the pushed phone detail's buttons — and neither
+/// may refresh a subset the other doesn't.
+void refreshLedger(WidgetRef ref, String customerId) {
+  ref.invalidate(
+    ledgerEntriesProvider((customerId: customerId, includeDeleted: false)),
+  );
+  ref.invalidate(
+    ledgerEntriesProvider((customerId: customerId, includeDeleted: true)),
+  );
+  ref.invalidate(customerBalanceProvider(customerId));
+  ref.invalidate(dashboardRowsProvider);
+}
+
+/// Confirms, then soft-deletes [entry]'s bill. Returns whether it was
+/// actually deleted, so each caller can follow up its own way: the list
+/// moves its selection to the top, the pushed detail screen pops back to
+/// the list it no longer describes.
+Future<bool> confirmDeleteBill(
+  BuildContext context,
+  WidgetRef ref,
+  LedgerEntry entry,
+  String customerId,
+) async {
+  final firm = ref.read(openFirmProvider).value;
+  if (firm == null) return false;
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      key: const Key('ledger.deleteDialog'),
+      title: Text('Delete bill ${entry.bill.displayNo}?'),
+      content: const Text(
+        'It leaves the ledger but stays in history and can be restored.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Keep'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
+  );
+  if (ok != true) return false;
+  await firm.bills.delete(entry.bill.id);
+  ref.invalidate(billHistoryProvider(entry.bill.id));
+  refreshLedger(ref, customerId);
+  return true;
+}
+
+/// Restores [version] of [entry]'s bill as a new version.
+Future<void> restoreBillVersion(
+  WidgetRef ref,
+  LedgerEntry entry,
+  String customerId, {
+  required int version,
+}) async {
+  final firm = ref.read(openFirmProvider).value;
+  if (firm == null) return;
+  await firm.bills.restoreVersion(entry.bill.id, version: version);
+  ref.invalidate(billHistoryProvider(entry.bill.id));
+  refreshLedger(ref, customerId);
+}
+
+/// Asks for a date range, then sends that customer's whole statement to the
+/// printer. Shared between the desktop Ctrl+Shift+P shortcut and the compact
+/// header's button so the two can't drift apart.
+Future<void> printLedgerStatement(
+  BuildContext context,
+  WidgetRef ref,
+  String customerId,
+) async {
+  final firm = ref.read(openFirmProvider).value;
+  if (firm == null) return;
+  final range = await showPrintRangeDialog(context);
+  if (range == null || !context.mounted) return;
+  await printLedger(
+    ref,
+    firm,
+    customerId,
+    fromDate: range.fromDate,
+    toDate: range.toDate,
+  );
+}
+
+/// Same range, saved as a PDF instead of printed.
+Future<void> exportLedgerStatement(
+  BuildContext context,
+  WidgetRef ref,
+  String customerId,
+) async {
+  final firm = ref.read(openFirmProvider).value;
+  if (firm == null) return;
+  final range = await showPrintRangeDialog(context);
+  if (range == null || !context.mounted) return;
+  await exportLedgerPdf(
+    ref,
+    firm,
+    customerId,
+    fromDate: range.fromDate,
+    toDate: range.toDate,
+  );
+}
+
 /// Two panes: the ledger (chronological, running balance) and the selected
 /// bill with its history. Debit = what the customer owes more (sale, cash paid
 /// to them, opening balance), Credit = owes less (purchase, cash received).
@@ -91,63 +201,21 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
     super.dispose();
   }
 
-  void _refresh() {
-    // Both variants may be cached (the toggle can flip either way), so both
-    // are invalidated rather than just the one currently showing.
-    ref.invalidate(
-      ledgerEntriesProvider((
-        customerId: widget.customerId,
-        includeDeleted: false,
-      )),
-    );
-    ref.invalidate(
-      ledgerEntriesProvider((
-        customerId: widget.customerId,
-        includeDeleted: true,
-      )),
-    );
-    ref.invalidate(customerBalanceProvider(widget.customerId));
-    ref.invalidate(dashboardRowsProvider);
-  }
-
   Future<void> _delete(LedgerEntry entry) async {
-    final firm = ref.read(openFirmProvider).value;
-    if (firm == null) return;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        key: const Key('ledger.deleteDialog'),
-        title: Text('Delete bill ${entry.bill.displayNo}?'),
-        content: const Text(
-          'It leaves the ledger but stays in history and can be restored.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Keep'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final deleted = await confirmDeleteBill(
+      context,
+      ref,
+      entry,
+      widget.customerId,
     );
-    if (ok != true) return;
-    await firm.bills.delete(entry.bill.id);
-    ref.invalidate(billHistoryProvider(entry.bill.id));
-    _refresh();
-    setState(() => _selected = 0);
+    if (deleted && mounted) setState(() => _selected = 0);
   }
 
   Future<void> _restore(LedgerEntry entry) async {
-    final firm = ref.read(openFirmProvider).value;
     final version = _selectedHistoryVersion;
-    if (firm == null || version == null) return;
-    await firm.bills.restoreVersion(entry.bill.id, version: version);
-    ref.invalidate(billHistoryProvider(entry.bill.id));
-    _refresh();
-    setState(() => _selectedHistoryVersion = null);
+    if (version == null) return;
+    await restoreBillVersion(ref, entry, widget.customerId, version: version);
+    if (mounted) setState(() => _selectedHistoryVersion = null);
   }
 
   int _effective(List<LedgerEntry> entries) {
@@ -156,20 +224,6 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
         ? -1
         : entries.indexWhere((e) => e.bill.id == widget.selectBillId);
     return i < 0 ? 0 : i;
-  }
-
-  Future<void> _printLedgerRange() async {
-    final firm = ref.read(openFirmProvider).value;
-    if (firm == null) return;
-    final range = await showPrintRangeDialog(context);
-    if (range == null || !mounted) return;
-    await printLedger(
-      ref,
-      firm,
-      widget.customerId,
-      fromDate: range.fromDate,
-      toDate: range.toDate,
-    );
   }
 
   KeyEventResult _onKey(
@@ -182,7 +236,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
     if (k == LogicalKeyboardKey.keyP &&
         HardwareKeyboard.instance.isControlPressed &&
         HardwareKeyboard.instance.isShiftPressed) {
-      _printLedgerRange();
+      printLedgerStatement(context, ref, widget.customerId);
       return KeyEventResult.handled;
     }
     if (entries.isEmpty) return KeyEventResult.ignored;
@@ -248,16 +302,21 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
             color: c.ink3,
           ),
         ),
-        Row(
+        // Wrap, not Row: a real name and phone side by side ("Rashid
+        // Traders" + "0300-9876543") are wider than a ~346px phone content
+        // width and overflowed -- the seeded test customer happened to be
+        // short and phoneless, so nothing caught it. Wrap drops the phone to
+        // its own line instead; above the breakpoint they still sit on one.
+        Wrap(
+          spacing: 10,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             Text(
               customer?.name ?? '',
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
             ),
-            if (customer?.phone case final p?) ...[
-              const SizedBox(width: 10),
+            if (customer?.phone case final p?)
               Text(p, style: numberStyle.copyWith(fontSize: 13, color: c.ink3)),
-            ],
           ],
         ),
       ],
@@ -332,6 +391,31 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
             children: [
               _balanceInfo(balance, align: CrossAxisAlignment.start),
               _showDeletedToggle(),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Whole-customer actions, so they belong to the list and not to
+          // the pushed per-bill detail. Ctrl+Shift+P is the only way to
+          // reach the statement on desktop and exportLedgerPdf had no entry
+          // point at all -- neither is usable on a device with no keyboard.
+          // Wrap, not Row: two buttons plus a longer label wrap rather than
+          // overflow at phone width.
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton(
+                key: const Key('ledger.printStatement'),
+                onPressed: () =>
+                    printLedgerStatement(context, ref, widget.customerId),
+                child: const Text('Print statement'),
+              ),
+              OutlinedButton(
+                key: const Key('ledger.exportStatement'),
+                onPressed: () =>
+                    exportLedgerStatement(context, ref, widget.customerId),
+                child: const Text('Export PDF'),
+              ),
             ],
           ),
         ],
@@ -844,11 +928,17 @@ class LedgerDetailPanel extends ConsumerWidget {
     required this.itemNames,
     required this.selectedHistoryVersion,
     required this.onSelectHistory,
+    this.showRestoreKeyHint = true,
   });
   final LedgerEntry entry;
   final Map<String, String> itemNames;
   final int? selectedHistoryVersion;
   final void Function(int) onSelectHistory;
+
+  /// Whether to print the "press R to restore" line under the history. False
+  /// on the pushed phone screen, which has a Restore button instead and no
+  /// R key to press.
+  final bool showRestoreKeyHint;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -960,7 +1050,7 @@ class LedgerDetailPanel extends ConsumerWidget {
                 'v1 · created',
                 style: TextStyle(fontSize: 12.5, color: c.ink2),
               ),
-            if (history.isNotEmpty)
+            if (history.isNotEmpty && showRestoreKeyHint)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ledgerly/bootstrap/router.dart';
 import 'package:ledgerly/features/ledger/ledger_screen.dart';
+import 'package:ledgerly/printing/print_actions.dart';
 import 'package:ledgerly_core/ledgerly_core.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 
@@ -248,6 +250,7 @@ void main() {
     variant: windowsOnly,
   );
 
+  _compactBillActionTests();
   _showDeletedTests();
   testWidgets(
     'ledger lists entries in date order with running balance, debit/credit columns and an edited badge',
@@ -504,5 +507,196 @@ void _showDeletedTests() {
       expect(find.byKey(const Key('ledger.deleteDialog')), findsNothing);
     },
     variant: windowsOnly,
+  );
+}
+
+/// Every bill action the desktop ledger offers by keyboard only — F2 edit,
+/// Delete, R restore, Ctrl+P reprint — plus the exports that had no call site
+/// at all, driven the way a touch-only user reaches them.
+void _compactBillActionTests() {
+  final confirmDeleteButton = find.descendant(
+    of: find.byKey(const Key('ledger.deleteDialog')),
+    matching: find.text('Delete'),
+  );
+
+  /// Opens the pushed detail screen for the sale (the third row: opening
+  /// balance, cash in, sale).
+  Future<ProviderContainer> openSaleDetail(WidgetTester tester) async {
+    final container = await pumpLedgerly(
+      tester,
+      seed: seedLedger,
+      viewSize: const Size(390, 844),
+    );
+    container.read(routerProvider).go('/customers/$rashidId');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('ledger.compactRow.2')));
+    await tester.pumpAndSettle();
+    return container;
+  }
+
+  testWidgets(
+    'tapping Edit on the pushed detail opens the bill for editing, like F2',
+    (tester) async {
+      await openSaleDetail(tester);
+
+      await tester.tap(find.byKey(const Key('ledger.detail.edit')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('bill.screen')), findsOneWidget);
+      expect(find.text('EDIT SALE'), findsOneWidget);
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets('tapping Delete on the pushed detail soft-deletes the bill after '
+      'confirmation and returns to the ledger, like the Delete key', (
+    tester,
+  ) async {
+    await openSaleDetail(tester);
+
+    await tester.tap(find.byKey(const Key('ledger.detail.delete')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('ledger.deleteDialog')), findsOneWidget);
+    // Scoped to the dialog: the action row behind it also says
+    // "Delete".
+    await tester.tap(confirmDeleteButton);
+    await tester.pumpAndSettle();
+
+    // Same observable result the windowsOnly Delete-key test asserts: the
+    // sale is gone from the ledger and out of the balance. Plus a step back
+    // to the list, which the pushed screen owes the user.
+    expect(find.byKey(const Key('ledger.compactList')), findsOneWidget);
+    expect(find.byKey(const Key('ledger.detailPanel')), findsNothing);
+    expect(find.byKey(const Key('ledger.compactRow.2')), findsNothing);
+    expect(find.text('Rs 1,20,000'), findsOneWidget);
+  }, variant: phoneOnly);
+
+  testWidgets(
+    'Restore is disabled until a history version is picked, then restores it '
+    'as a new version, like R',
+    (tester) async {
+      await openSaleDetail(tester);
+
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const Key('ledger.detail.restore')),
+            )
+            .onPressed,
+        isNull,
+      );
+      // The "press R to restore" line has no meaning here and is not shown.
+      expect(find.textContaining('press R'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('history.version.1')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const Key('ledger.detail.restore')),
+            )
+            .onPressed,
+        isNotNull,
+      );
+
+      await tester.tap(find.byKey(const Key('ledger.detail.restore')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('v3'), findsWidgets);
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'Print reprints the slip and Export PDF writes one, from the pushed detail',
+    (tester) async {
+      final container = await openSaleDetail(tester);
+      final printing =
+          container.read(printingServiceProvider) as FakePrintingService;
+
+      await tester.tap(find.byKey(const Key('ledger.detail.print')));
+      await tester.pumpAndSettle();
+      expect(printing.printedJobs, hasLength(1));
+
+      // exportSlipPdf had no call site anywhere in the app before this.
+      await tester.tap(find.byKey(const Key('ledger.detail.exportPdf')));
+      await tester.pumpAndSettle();
+      expect(printing.exportedPdfNames.single, startsWith('Slip-'));
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'Edit and Delete are disabled on an already-deleted bill, like their '
+    'keyboard equivalents',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: seedLedger,
+        viewSize: const Size(390, 844),
+      );
+      container.read(routerProvider).go('/customers/$rashidId');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('ledger.compactRow.2')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('ledger.detail.delete')));
+      await tester.pumpAndSettle();
+      // Scoped to the dialog: the action row behind it also says
+      // "Delete".
+      await tester.tap(confirmDeleteButton);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('ledger.showDeleted')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('ledger.compactRow.2')));
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<FilledButton>(find.byKey(const Key('ledger.detail.edit')))
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const Key('ledger.detail.delete')),
+            )
+            .onPressed,
+        isNull,
+      );
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'the compact ledger header can print and export the customer statement, '
+    'which only Ctrl+Shift+P could reach before',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: seedLedger,
+        viewSize: const Size(390, 844),
+      );
+      container.read(routerProvider).go('/customers/$rashidId');
+      await tester.pumpAndSettle();
+      final printing =
+          container.read(printingServiceProvider) as FakePrintingService;
+
+      await tester.tap(find.byKey(const Key('ledger.printStatement')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('printRange.dialog')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('printRange.all')));
+      await tester.pumpAndSettle();
+      expect(printing.printedJobs, hasLength(1));
+
+      // exportLedgerPdf had no call site anywhere in the app before this.
+      await tester.tap(find.byKey(const Key('ledger.exportStatement')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('printRange.all')));
+      await tester.pumpAndSettle();
+      expect(printing.exportedPdfNames.single, startsWith('Ledger-'));
+    },
+    variant: phoneOnly,
   );
 }

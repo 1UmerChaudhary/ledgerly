@@ -397,10 +397,7 @@ void main() {
 
       // Oil's defaultRateBase is the maund, so its chip -- and only its chip
       // -- comes up selected, and the base field echoes the same value.
-      expect(
-        selectedBaseChips(tester),
-        [formatKg(RateBase.maund, trim: true)],
-      );
+      expect(selectedBaseChips(tester), [formatKg(RateBase.maund, trim: true)]);
       expect(
         (tester.widget<TextField>(
           find.byKey(const Key('bill.line.0.card.base')),
@@ -416,9 +413,7 @@ void main() {
       expect(selectedBaseChips(tester), isEmpty);
 
       await tester.tap(
-        find.byKey(
-          Key('bill.line.0.card.basePreset.${RateBase.forty.grams}'),
-        ),
+        find.byKey(Key('bill.line.0.card.basePreset.${RateBase.forty.grams}')),
       );
       await tester.pumpAndSettle();
       expect(selectedBaseChips(tester), [formatKg(RateBase.forty, trim: true)]);
