@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ledgerly/bootstrap/router.dart';
 import 'package:ledgerly_core/ledgerly_core.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 
@@ -16,6 +17,26 @@ Future<void> seed(AppDatabase db, DeviceContext ctx) async {
     defaultBagWeight: Weight.kg(16),
     defaultRateBase: RateBase.maund,
   );
+}
+
+/// A customer whose name is long enough to force a fixed-width row to wrap
+/// or overflow if it isn't handled -- used by the phone-width regression
+/// tests below (Bugs B/C/F).
+const _longName = 'Muhammad Abdul Rahman Extremely Long Trading Company Name';
+
+Future<void> seedWithLongName(AppDatabase db, DeviceContext ctx) async {
+  await FirmSetup(db, ctx).createFirm(name: 'Mill', contactNumber: '0300');
+  final customer = await CustomersRepository(db, ctx).create(name: _longName);
+  await BillsRepository(db, ctx).saveNew(
+    Bill(
+      id: newId(),
+      customerId: customer.id,
+      type: TransactionType.openingBalance,
+      entryDate: '2026-09-01',
+      typedAmount: Money.rupees(10000),
+    ),
+  );
+  await ItemsRepository(db, ctx).create(name: 'Wheat');
 }
 
 Future<void> type(WidgetTester tester, Key key, String text) async {
@@ -102,5 +123,80 @@ void main() {
       expect(find.text('50.000'), findsOneWidget);
     },
     variant: windowsOnly,
+  );
+
+  testWidgets(
+    'at phone width, the customers header renders without overflow and '
+    '"Import opening balances" stays reachable',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: seed,
+        viewSize: const Size(390, 844),
+      );
+      container.read(routerProvider).go('/customers');
+      await tester.pumpAndSettle();
+
+      // Root cause: the title + "Import opening balances" button + summary
+      // text all sat in one fixed Row, which is wider than a phone
+      // viewport.
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.text('Import opening balances'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('openingBalances.screen')),
+        findsOneWidget,
+      );
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'at phone width, a long customer name is ellipsized in the customers '
+    'list instead of wrapping character-by-character',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: seedWithLongName,
+        viewSize: const Size(390, 844),
+      );
+      container.read(routerProvider).go('/customers');
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      // Before the fix this Text had no overflow/maxLines handling, so a
+      // ~316px-wide Expanded slice squeezed to a few pixels wrapped the
+      // name into dozens of one/two-character lines (measured ~950px
+      // tall in the unfixed code). A single ellipsized line is well under
+      // 30px.
+      final nameFinder = find.text(_longName);
+      expect(nameFinder, findsOneWidget);
+      expect(tester.getSize(nameFinder).height, lessThan(30));
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'at phone width, the items list header shows "NAME" on one line, not '
+    'wrapped mid-word',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: seed,
+        viewSize: const Size(390, 844),
+      );
+      container.read(routerProvider).go('/items');
+      await tester.pumpAndSettle();
+
+      // Root cause: the NAME column was an Expanded sharing a Row with
+      // three fixed 120/120/80px columns that alone exceed a phone
+      // viewport's width, squeezing NAME's share to nothing and forcing
+      // the 4-letter label to break mid-word ("NA"/"ME") across two lines.
+      expect(tester.takeException(), isNull);
+      final header = find.text('NAME');
+      expect(header, findsOneWidget);
+      expect(tester.getSize(header).height, lessThan(20));
+    },
+    variant: phoneOnly,
   );
 }

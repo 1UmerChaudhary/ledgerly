@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:ledgerly_core/ledgerly_core.dart';
 
+import '../../shell/breakpoints.dart';
 import '../../theme/ledgerly_theme.dart';
 import '../bills/bill_draft.dart';
 import '../dashboard/dashboard_screen.dart';
@@ -31,6 +32,10 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    // Single source of truth for this screen's phone/desktop header split --
+    // matches ledger_screen.dart/dashboard_screen.dart's convention of
+    // deriving it once from MediaQuery rather than a local LayoutBuilder.
+    final compact = MediaQuery.of(context).size.width < kCompactBreakpoint;
     final all = ref.watch(customersListProvider).value ?? const <Customer>[];
     final balances = {
       for (final r
@@ -82,29 +87,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  Text(
-                    'CUSTOMERS',
-                    style: TextStyle(
-                      fontSize: 11,
-                      letterSpacing: 1,
-                      fontWeight: FontWeight.w600,
-                      color: c.ink3,
-                    ),
-                  ),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: () => context.go('/customers/opening-balances'),
-                    child: const Text('Import opening balances'),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    '${all.length} total · Ctrl+N adds one',
-                    style: TextStyle(fontSize: 12.5, color: c.ink3),
-                  ),
-                ],
-              ),
+              _buildHeader(context, compact, all.length),
               const SizedBox(height: 10),
               TextField(
                 key: const Key('customers.search'),
@@ -156,6 +139,13 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                               Expanded(
                                 child: Text(
                                   cu.name,
+                                  // A long name has nowhere near enough
+                                  // room next to the two fixed phone/
+                                  // balance columns -- without this it
+                                  // wraps character-by-character down the
+                                  // row instead of truncating cleanly.
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
                                   style: const TextStyle(fontSize: 13.5),
                                 ),
                               ),
@@ -196,6 +186,57 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  /// Above [kCompactBreakpoint] this Row is unchanged from before the phone
+  /// redesign. Below it, the title/button/summary side by side want far
+  /// more than a ~346px content width (confirmed: overflows), so the title
+  /// stacks above a Wrap of the button and summary text -- Wrap (not a
+  /// second fixed Row) so the summary text drops to its own line instead of
+  /// overflowing if it and the button still don't both fit on one line.
+  Widget _buildHeader(BuildContext context, bool compact, int total) {
+    final c = context.colors;
+    final title = Text(
+      'CUSTOMERS',
+      style: TextStyle(
+        fontSize: 11,
+        letterSpacing: 1,
+        fontWeight: FontWeight.w600,
+        color: c.ink3,
+      ),
+    );
+    final importButton = TextButton(
+      onPressed: () => context.go('/customers/opening-balances'),
+      child: const Text('Import opening balances'),
+    );
+    final summary = Text(
+      '$total total · Ctrl+N adds one',
+      style: TextStyle(fontSize: 12.5, color: c.ink3),
+    );
+    if (compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          title,
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 10,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [importButton, summary],
+          ),
+        ],
+      );
+    }
+    return Row(
+      children: [
+        title,
+        const Spacer(),
+        importButton,
+        const SizedBox(width: 10),
+        summary,
+      ],
     );
   }
 }

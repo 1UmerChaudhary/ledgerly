@@ -187,6 +187,39 @@ void main() {
   }, variant: phoneOnly);
 
   testWidgets(
+    'at phone width, the "pick a customer" totals hint wraps normally '
+    'instead of one character per line',
+    (tester) async {
+      await pumpLedgerly(
+        tester,
+        seed: seedFirmOnly,
+        viewSize: const Size(390, 844),
+      );
+      await tester.tap(find.byKey(const Key('shell.fab.newSale')));
+      await tester.pumpAndSettle();
+
+      // The totals section (and this hint inside it) sits below the fold
+      // on a phone-height viewport -- scroll to it like a real user would.
+      final hint = find.text('Pick a customer to see the balance change.');
+      await tester.dragUntilVisible(
+        hint,
+        find.byType(ListView),
+        const Offset(0, -300),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      // _Totals's compact LayoutBuilder split (fixed earlier in this effort)
+      // gives this hint the full row width instead of an Expanded sliver
+      // squeezed next to a fixed 320px totals box -- unfixed, that squeeze
+      // wraps the sentence character-by-character (measured ~950px tall).
+      // A normal 1-2 line wrap is well under 50px.
+      expect(tester.getSize(hint).height, lessThan(50));
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
     'at phone width, a sale line renders as a touch card, not the grid',
     (tester) async {
       await pumpLedgerly(

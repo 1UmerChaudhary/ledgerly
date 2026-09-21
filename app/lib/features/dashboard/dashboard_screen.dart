@@ -309,6 +309,13 @@ class _BalancePanel extends ConsumerWidget {
                         Expanded(
                           child: Text(
                             rows[i].customer.name,
+                            // A long name has little room next to the
+                            // balance column -- without this it wraps
+                            // across several lines instead of truncating
+                            // cleanly (same fix as customers_screen.dart's
+                            // list row).
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                             style: const TextStyle(fontSize: 13.5),
                           ),
                         ),

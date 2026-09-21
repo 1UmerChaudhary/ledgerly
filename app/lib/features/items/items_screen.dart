@@ -16,12 +16,26 @@ class ItemsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final c = context.colors;
     final items = ref.watch(itemsListProvider).value ?? const <Item>[];
+    // Single source of truth for this screen's phone/desktop split, same
+    // convention as customers_screen.dart/ledger_screen.dart.
+    final compact = MediaQuery.of(context).size.width < kCompactBreakpoint;
     TextStyle head() => TextStyle(
       fontSize: 11,
       letterSpacing: .6,
       fontWeight: FontWeight.w600,
       color: c.ink3,
     );
+    // Below kCompactBreakpoint the three fixed pixel columns (120+120+80 =
+    // 320px) alone are wider than the ~316px table width, squeezing NAME's
+    // Expanded share to nothing and forcing its header label to wrap
+    // mid-word ("NA"/"ME"). Below the breakpoint every column becomes a
+    // proportional Expanded slice instead of a fixed pixel width, so the
+    // Row always exactly fills the available width; above it, the
+    // SizedBox widths are unchanged.
+    Widget col(Widget child, {required double width, required int flex}) =>
+        compact
+        ? Expanded(flex: flex, child: child)
+        : SizedBox(width: width, child: child);
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyN, control: true): () =>
@@ -35,24 +49,7 @@ class ItemsScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  Text(
-                    'ITEMS',
-                    style: TextStyle(
-                      fontSize: 11,
-                      letterSpacing: 1,
-                      fontWeight: FontWeight.w600,
-                      color: c.ink3,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${items.length} total · Ctrl+N adds one',
-                    style: TextStyle(fontSize: 12.5, color: c.ink3),
-                  ),
-                ],
-              ),
+              _buildTitleRow(context, compact, items.length),
               const SizedBox(height: 12),
               Expanded(
                 child: Container(
@@ -73,30 +70,36 @@ class ItemsScreen extends ConsumerWidget {
                         ),
                         child: Row(
                           children: [
-                            Expanded(child: Text('NAME', style: head())),
-                            SizedBox(
-                              width: 120,
-                              child: Text(
+                            Expanded(
+                              flex: compact ? 3 : 1,
+                              child: Text('NAME', style: head()),
+                            ),
+                            col(
+                              Text(
                                 'BAG KG',
                                 textAlign: TextAlign.right,
                                 style: head(),
                               ),
-                            ),
-                            SizedBox(
                               width: 120,
-                              child: Text(
+                              flex: 2,
+                            ),
+                            col(
+                              Text(
                                 'RATE PER KG',
                                 textAlign: TextAlign.right,
                                 style: head(),
                               ),
+                              width: 120,
+                              flex: 2,
                             ),
-                            SizedBox(
-                              width: 80,
-                              child: Text(
+                            col(
+                              Text(
                                 'UNIT',
                                 textAlign: TextAlign.right,
                                 style: head(),
                               ),
+                              width: 80,
+                              flex: 1,
                             ),
                           ],
                         ),
@@ -120,24 +123,27 @@ class ItemsScreen extends ConsumerWidget {
                               child: Row(
                                 children: [
                                   Expanded(
+                                    flex: compact ? 3 : 1,
                                     child: Text(
                                       i.name,
+                                      overflow: TextOverflow.ellipsis,
+                                      maxLines: 1,
                                       style: const TextStyle(fontSize: 13.5),
                                     ),
                                   ),
-                                  SizedBox(
-                                    width: 120,
-                                    child: Text(
+                                  col(
+                                    Text(
                                       i.defaultBagWeight == null
                                           ? '—'
                                           : formatKg(i.defaultBagWeight!),
                                       textAlign: TextAlign.right,
                                       style: numberStyle.copyWith(fontSize: 13),
                                     ),
-                                  ),
-                                  SizedBox(
                                     width: 120,
-                                    child: Text(
+                                    flex: 2,
+                                  ),
+                                  col(
+                                    Text(
                                       i.defaultRateBase == null
                                           ? '—'
                                           : formatKg(
@@ -147,10 +153,11 @@ class ItemsScreen extends ConsumerWidget {
                                       textAlign: TextAlign.right,
                                       style: numberStyle.copyWith(fontSize: 13),
                                     ),
+                                    width: 120,
+                                    flex: 2,
                                   ),
-                                  SizedBox(
-                                    width: 80,
-                                    child: Text(
+                                  col(
+                                    Text(
                                       i.defaultUom.name,
                                       textAlign: TextAlign.right,
                                       style: numberStyle.copyWith(
@@ -158,6 +165,8 @@ class ItemsScreen extends ConsumerWidget {
                                         color: c.ink2,
                                       ),
                                     ),
+                                    width: 80,
+                                    flex: 1,
                                   ),
                                 ],
                               ),
@@ -174,6 +183,34 @@ class ItemsScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// Above [kCompactBreakpoint] this Row is unchanged. Below it, the title
+  /// and summary text together are wider than a ~346px content width
+  /// (confirmed: overflows by ~33px), so they stack instead of sitting
+  /// side by side with a Spacer between them.
+  Widget _buildTitleRow(BuildContext context, bool compact, int total) {
+    final c = context.colors;
+    final title = Text(
+      'ITEMS',
+      style: TextStyle(
+        fontSize: 11,
+        letterSpacing: 1,
+        fontWeight: FontWeight.w600,
+        color: c.ink3,
+      ),
+    );
+    final summary = Text(
+      '$total total · Ctrl+N adds one',
+      style: TextStyle(fontSize: 12.5, color: c.ink3),
+    );
+    if (compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [title, const SizedBox(height: 4), summary],
+      );
+    }
+    return Row(children: [title, const Spacer(), summary]);
   }
 }
 

@@ -286,13 +286,9 @@ void main() {
     container.read(routerProvider).go('/customers');
     await tester.pumpAndSettle();
 
-    // customers_screen.dart's own header row already overflows a phone
-    // viewport regardless of this task's FAB change -- customers has been
-    // reachable from the compact bottom nav since an earlier task,
-    // independent of Bug 3. Out of scope here; swallow the known
-    // pre-existing overflow so it doesn't mask the actual assertion.
-    while (tester.takeException() != null) {}
-
+    // customers_screen.dart's header overflow at phone width was fixed
+    // separately (customers_items_test.dart) -- no exception expected here.
+    expect(tester.takeException(), isNull);
     expect(find.byKey(const Key('shell.fab.addCustomer')), findsOneWidget);
     await tester.tap(find.byKey(const Key('shell.fab.addCustomer')));
     await tester.pumpAndSettle();
@@ -314,13 +310,10 @@ void main() {
     container.read(routerProvider).go('/items');
     await tester.pumpAndSettle();
 
-    // items_screen.dart's own header row already overflows a phone
-    // viewport regardless of this task's FAB change -- items has been
-    // reachable from the compact bottom nav since an earlier task,
-    // independent of Bug 3. Out of scope here; swallow the known
-    // pre-existing overflow so it doesn't mask the actual assertion.
-    while (tester.takeException() != null) {}
-
+    // items_screen.dart's header/NAME-column overflow at phone width was
+    // fixed separately (customers_items_test.dart) -- no exception
+    // expected here.
+    expect(tester.takeException(), isNull);
     expect(find.byKey(const Key('shell.fab.addItem')), findsOneWidget);
     await tester.tap(find.byKey(const Key('shell.fab.addItem')));
     await tester.pumpAndSettle();
@@ -340,13 +333,9 @@ void main() {
     container.read(routerProvider).go('/settings');
     await tester.pumpAndSettle();
 
-    // settings_screen.dart's own _field row (a fixed 130+520px Row) already
-    // overflows a phone viewport regardless of this task's FAB change --
-    // settings has been reachable from the compact bottom nav since an
-    // earlier task, independent of Bug 3. Out of scope here; swallow the
-    // known pre-existing overflow so it doesn't mask the actual assertion.
-    while (tester.takeException() != null) {}
-
+    // settings_screen.dart's _field overflow at phone width was fixed
+    // separately (settings_test.dart) -- no exception expected here anymore.
+    expect(tester.takeException(), isNull);
     expect(find.byType(FloatingActionButton), findsNothing);
   }, variant: phoneOnly);
 
@@ -409,6 +398,45 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('CASH PAID'), findsOneWidget); // type=cash_out
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'at phone width, a long customer name is ellipsized in the dashboard '
+    'receivables list instead of wrapping across several lines',
+    (tester) async {
+      const longName =
+          'Muhammad Abdul Rahman Extremely Long Trading Company Name';
+      await pumpLedgerly(
+        tester,
+        seed: (db, ctx) async {
+          await FirmSetup(db, ctx)
+              .createFirm(name: 'Test Firm', contactNumber: '0300');
+          final customer = await CustomersRepository(
+            db,
+            ctx,
+          ).create(name: longName);
+          await BillsRepository(db, ctx).saveNew(
+            Bill(
+              id: newId(),
+              customerId: customer.id,
+              type: TransactionType.openingBalance,
+              entryDate: '2026-09-01',
+              typedAmount: Money.rupees(10000),
+            ),
+          );
+        },
+        viewSize: const Size(390, 844),
+      );
+
+      expect(tester.takeException(), isNull);
+      // Before the fix this Text had no overflow/maxLines handling, so the
+      // Expanded slice next to the balance column wrapped the name across
+      // several lines instead of truncating cleanly.
+      final nameFinder = find.text(longName);
+      expect(nameFinder, findsOneWidget);
+      expect(tester.getSize(nameFinder).height, lessThan(30));
     },
     variant: phoneOnly,
   );

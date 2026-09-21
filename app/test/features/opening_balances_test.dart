@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ledgerly/bootstrap/router.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 
 import '../support/pump_app.dart';
@@ -132,4 +133,47 @@ void main() {
       'Bilal Depot',
     );
   }, variant: windowsOnly);
+
+  testWidgets(
+    'at phone width, an opening-balance row stacks name/phone/balance so '
+    'Balance stays reachable instead of being pushed off the overflow edge',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: seedFirm,
+        viewSize: const Size(390, 844),
+      );
+      container.read(routerProvider).go('/customers/opening-balances');
+      await tester.pumpAndSettle();
+
+      // Root cause: three fixed 240/160/140px SizedBoxes in one Row want
+      // ~556px against a ~346px content width -- Balance (the last one)
+      // was the one pushed past the overflowing edge.
+      expect(tester.takeException(), isNull);
+
+      await tester.ensureVisible(
+        find.byKey(const Key('openingBalances.row.0.balance')),
+      );
+      await tester.pumpAndSettle();
+      await type(
+        tester,
+        const Key('openingBalances.row.0.name'),
+        'Rashid Traders',
+      );
+      await type(
+        tester,
+        const Key('openingBalances.row.0.balance'),
+        '620000',
+      );
+      await tester.ensureVisible(
+        find.byKey(const Key('openingBalances.save')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('openingBalances.save')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('1 customer'), findsOneWidget);
+    },
+    variant: phoneOnly,
+  );
 }
