@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ledgerly/bootstrap/router.dart';
 import 'package:ledgerly/features/settings/settings_providers.dart';
 import 'package:ledgerly/printing/print_actions.dart';
 import 'package:ledgerly/printing/printing_service.dart';
@@ -285,5 +286,71 @@ void main() {
       expect(find.textContaining('MPT-II'), findsWidgets);
     },
     variant: windowsOnly,
+  );
+
+  testWidgets(
+    'settings screen renders without overflow at phone width and the printer '
+    'pickers stay reachable by touch',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: seed,
+        viewSize: const Size(390, 844),
+      );
+      container.read(routerProvider).go('/settings');
+      await tester.pumpAndSettle();
+
+      // Root cause: _field's hardcoded 130px label + 520px field forces a
+      // 650px-wide Row on every settings row -- a hard RenderFlex overflow
+      // at a ~346px content width, which also made both printer picker
+      // buttons below unreachable by touch on the real device.
+      expect(tester.takeException(), isNull);
+
+      await tester.ensureVisible(find.byKey(const Key('settings.choosePrinter')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings.choosePrinter')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('settings.printerDialog')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('settings.printerOption.none')));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(
+        find.byKey(const Key('settings.thermalPrinterPicker')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings.thermalPrinterPicker')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('settings.thermalPrinterDialog')),
+        findsOneWidget,
+      );
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'at phone width, the firm-name field stacks its label above the field '
+    'instead of beside it',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: seed,
+        viewSize: const Size(390, 844),
+      );
+      container.read(routerProvider).go('/settings');
+      await tester.pumpAndSettle();
+
+      // Above kCompactBreakpoint the label sits in a fixed 130px SizedBox
+      // beside the field; below it there is no such fixed-width column, so
+      // the label's left edge and the field's left edge line up (a stacked
+      // Column) instead of the field starting 130px to the right of it.
+      final labelTopLeft = tester.getTopLeft(find.text('Firm name'));
+      final fieldTopLeft = tester.getTopLeft(
+        find.byKey(const Key('settings.firmName')),
+      );
+      expect(fieldTopLeft.dx, labelTopLeft.dx);
+      expect(tester.takeException(), isNull);
+    },
+    variant: phoneOnly,
   );
 }
