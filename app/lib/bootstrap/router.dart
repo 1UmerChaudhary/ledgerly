@@ -44,49 +44,84 @@ final routerProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(
         path: '/loading',
-        builder: (_, _) => const AppShell(hints: [], child: SizedBox.shrink()),
+        builder: (_, _) => const AppShell(
+          hints: [],
+          location: '/loading',
+          child: SizedBox.shrink(),
+        ),
       ),
       GoRoute(path: '/setup', builder: (_, _) => const FirstLaunchScreen()),
       ShellRoute(
-        builder: (context, state, child) =>
-            AppShell(hints: hintsFor(state.matchedLocation), child: child),
+        // `state.uri.path`, not `state.matchedLocation`: a ShellRouteMatch
+        // stores its matchedLocation once, when the shell was first matched,
+        // and popping a route *inside* the shell navigator never updates it
+        // (only `uri`/`fullPath` are re-derived from the live match list).
+        // Reading matchedLocation here left the shell showing drill-down
+        // chrome -- back arrow, no bottom nav -- after back had already
+        // returned to the list. Verified on device and by widget test.
+        builder: (context, state, child) {
+          final location = state.uri.path;
+          return AppShell(
+            location: location,
+            hints: hintsFor(location),
+            child: child,
+          );
+        },
         routes: [
           GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
           GoRoute(path: '/', builder: (_, _) => const DashboardScreen()),
+          // Drill-downs are declared as nested `routes:` children of the list
+          // they were launched from, not as flat siblings. Every navigation
+          // in this app uses go() (replace), so a flat sibling route leaves
+          // a one-page stack behind: context.canPop() is false and both the
+          // title-bar back button and the system back gesture fall through
+          // to the dashboard instead of the list. Nesting makes go() build
+          // the parent page underneath the child, which is what the spec
+          // means by "back returns to the list".
           GoRoute(
             path: '/customers',
             builder: (_, _) => const CustomersScreen(),
+            routes: [
+              GoRoute(
+                path: 'new',
+                builder: (_, _) => const CustomerFormScreen(),
+              ),
+              GoRoute(
+                path: 'opening-balances',
+                builder: (_, _) => const OpeningBalancesScreen(),
+              ),
+            ],
           ),
           GoRoute(
-            path: '/customers/new',
-            builder: (_, _) => const CustomerFormScreen(),
+            path: '/items',
+            builder: (_, _) => const ItemsScreen(),
+            routes: [
+              GoRoute(path: 'new', builder: (_, _) => const ItemFormScreen()),
+            ],
           ),
-          GoRoute(
-            path: '/customers/opening-balances',
-            builder: (_, _) => const OpeningBalancesScreen(),
-          ),
-          GoRoute(path: '/items', builder: (_, _) => const ItemsScreen()),
           GoRoute(
             path: '/cash-sales',
             builder: (_, _) => const CashSalesScreen(),
           ),
-          GoRoute(
-            path: '/items/new',
-            builder: (_, _) => const ItemFormScreen(),
-          ),
+          // Kept a top-level route rather than a child of '/customers': the
+          // ledger is opened from the dashboard at least as often as from
+          // the customers list, so "back" from it means the dashboard --
+          // exactly what its own Esc hint already promises.
           GoRoute(
             path: '/customers/:id',
             builder: (_, s) => LedgerScreen(
               customerId: s.pathParameters['id']!,
               selectBillId: s.uri.queryParameters['select'],
             ),
-          ),
-          GoRoute(
-            path: '/customers/:id/bills/:billId',
-            builder: (_, s) => LedgerDetailScreen(
-              customerId: s.pathParameters['id']!,
-              billId: s.pathParameters['billId']!,
-            ),
+            routes: [
+              GoRoute(
+                path: 'bills/:billId',
+                builder: (_, s) => LedgerDetailScreen(
+                  customerId: s.pathParameters['id']!,
+                  billId: s.pathParameters['billId']!,
+                ),
+              ),
+            ],
           ),
           GoRoute(
             path: '/bills/new',

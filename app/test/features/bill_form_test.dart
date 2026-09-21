@@ -377,4 +377,56 @@ void main() {
     },
     variant: phoneOnly,
   );
+
+  testWidgets(
+    'the Android system back gesture on a dirty unsaved bill asks before '
+    'discarding instead of silently leaving',
+    (tester) async {
+      await pumpLedgerly(
+        tester,
+        seed: seedFirmOnly,
+        viewSize: const Size(390, 844),
+      );
+      await tester.tap(find.byKey(const Key('shell.fab.newSale')));
+      await tester.pumpAndSettle();
+      await typeInto(tester, const Key('bill.description'), 'Sept supply');
+
+      await systemBack(tester);
+
+      // The shell's generic PopScope would have done context.go('/') here,
+      // dropping the bill with no prompt.
+      expect(find.byKey(const Key('bill.screen')), findsOneWidget);
+      expect(find.byKey(const Key('bill.discardDialog')), findsOneWidget);
+
+      await tester.tap(find.text('Keep editing'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('bill.screen')), findsOneWidget);
+
+      await systemBack(tester);
+      await tester.tap(find.text('Discard'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('bill.screen')), findsNothing);
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'the title-bar back button on a dirty unsaved bill asks before discarding',
+    (tester) async {
+      await pumpLedgerly(
+        tester,
+        seed: seedFirmOnly,
+        viewSize: const Size(390, 844),
+      );
+      await tester.tap(find.byKey(const Key('shell.fab.newSale')));
+      await tester.pumpAndSettle();
+      await typeInto(tester, const Key('bill.description'), 'Sept supply');
+
+      await tester.tap(find.byKey(const Key('shell.backButton')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('bill.discardDialog')), findsOneWidget);
+    },
+    variant: phoneOnly,
+  );
 }

@@ -83,10 +83,23 @@ bool isTopLevelRoute(String location) {
 /// shortcut letter on each entry, the content, and the key-hint bar that
 /// teaches the shortcuts by always showing what the keyboard can do right now.
 class AppShell extends ConsumerWidget {
-  const AppShell({super.key, required this.child, required this.hints});
+  const AppShell({
+    super.key,
+    required this.child,
+    required this.hints,
+    required this.location,
+  });
 
   final Widget child;
   final List<KeyHint> hints;
+
+  /// Passed down from the ShellRoute builder's own `state`, not read back out
+  /// of `GoRouterState.of(context)`: the shell sits in the *root* navigator's
+  /// page, and popping a nested route inside the shell navigator leaves that
+  /// page's registered state stale -- the back button and bottom nav then
+  /// keep showing the drill-down chrome after the app has already returned to
+  /// the list (reproduced on device and in a widget test).
+  final String location;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -95,7 +108,6 @@ class AppShell extends ConsumerWidget {
     final firm = ref.watch(openFirmProvider).value;
     final settings = ref.watch(firmSettingsProvider).value;
     final backup = ref.watch(backupRunnerProvider);
-    final location = GoRouterState.of(context).matchedLocation;
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyN, control: true): () =>
@@ -128,11 +140,12 @@ class AppShell extends ConsumerWidget {
             return PopScope(
               // At a top-level route there's nowhere sensible to "go back"
               // to, so the system back gesture keeps its normal behaviour
-              // (backgrounds/exits the app). At a drill-down route it must
-              // match the in-app back button in _TitleBar exactly, which
-              // falls through to context.go('/') because every navigation
-              // in this app uses go() (replace), never push() -- so
-              // context.canPop() is always false.
+              // (backgrounds/exits the app). At a drill-down route this is
+              // the *last* fallback only: go_router tries the shell
+              // navigator first, so a nested detail route pops to its list
+              // and a screen with its own PopScope (BillScreen) handles its
+              // own exit. This fires only for a drill-down that is neither,
+              // e.g. the ledger opened straight from the dashboard.
               canPop: isTopLevelRoute(location),
               onPopInvokedWithResult: (didPop, result) {
                 if (!didPop && !isTopLevelRoute(location)) {
@@ -165,8 +178,7 @@ class AppShell extends ConsumerWidget {
                     ],
                   ),
                 ),
-                bottomNavigationBar:
-                    compact && isTopLevelRoute(location)
+                bottomNavigationBar: compact && isTopLevelRoute(location)
                     ? _CompactNav(location: location)
                     : null,
                 floatingActionButton: compact
@@ -297,11 +309,18 @@ class _TitleBar extends StatelessWidget {
               key: const Key('shell.backButton'),
               icon: const Icon(Icons.arrow_back, size: 18),
               padding: EdgeInsets.zero,
-              onPressed: () {
-                if (context.canPop()) {
-                  context.pop();
-                } else {
-                  context.go('/');
+              // Routed through the same pop path the Android system back
+              // gesture uses (Router -> routerDelegate.popRoute), rather
+              // than a bare context.go('/'), so the two can never disagree:
+              // popRoute walks the shell navigator first, which pops a
+              // nested detail route or fires the current screen's own
+              // PopScope (BillScreen's unsaved-bill guard). Only when
+              // nothing at all handled the pop does it fall back to the
+              // dashboard.
+              onPressed: () async {
+                final router = GoRouter.of(context);
+                if (!await router.routerDelegate.popRoute()) {
+                  if (context.mounted) router.go('/');
                 }
               },
             ),
@@ -487,11 +506,26 @@ class _CompactNav extends StatelessWidget {
       selectedIndex: index,
       onDestinationSelected: (i) => context.go(routes[i]),
       destinations: [
-        NavigationDestination(icon: const Icon(Icons.dashboard), label: l10n.navDashboard),
-        NavigationDestination(icon: const Icon(Icons.people), label: l10n.navCustomers),
-        NavigationDestination(icon: const Icon(Icons.inventory_2), label: l10n.navItems),
-        NavigationDestination(icon: const Icon(Icons.point_of_sale), label: l10n.navCashSales),
-        NavigationDestination(icon: const Icon(Icons.settings), label: l10n.navSettings),
+        NavigationDestination(
+          icon: const Icon(Icons.dashboard),
+          label: l10n.navDashboard,
+        ),
+        NavigationDestination(
+          icon: const Icon(Icons.people),
+          label: l10n.navCustomers,
+        ),
+        NavigationDestination(
+          icon: const Icon(Icons.inventory_2),
+          label: l10n.navItems,
+        ),
+        NavigationDestination(
+          icon: const Icon(Icons.point_of_sale),
+          label: l10n.navCashSales,
+        ),
+        NavigationDestination(
+          icon: const Icon(Icons.settings),
+          label: l10n.navSettings,
+        ),
       ],
     );
   }

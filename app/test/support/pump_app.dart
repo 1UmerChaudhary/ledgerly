@@ -125,6 +125,19 @@ Future<ProviderContainer> pumpLedgerly(
 final windowsOnly = TargetPlatformVariant.only(TargetPlatform.windows);
 final phoneOnly = TargetPlatformVariant.only(TargetPlatform.android);
 
+/// Simulates the Android system back gesture / hardware back button: the
+/// platform sends a `popRoute` navigation message, which the Router's
+/// back-button dispatcher turns into `routerDelegate.popRoute()`. Nothing
+/// else in a widget test exercises PopScope the way a real device does.
+Future<void> systemBack(WidgetTester tester) async {
+  await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+    'flutter/navigation',
+    const JSONMethodCodec().encodeMethodCall(const MethodCall('popRoute')),
+    (_) {},
+  );
+  await tester.pumpAndSettle();
+}
+
 Future<void> pressCtrl(WidgetTester tester, LogicalKeyboardKey key) async {
   await tester.sendKeyDownEvent(
     LogicalKeyboardKey.controlLeft,

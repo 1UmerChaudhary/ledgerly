@@ -143,10 +143,7 @@ void main() {
       expect(tester.takeException(), isNull);
       await tester.tap(find.text('Import opening balances'));
       await tester.pumpAndSettle();
-      expect(
-        find.byKey(const Key('openingBalances.screen')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const Key('openingBalances.screen')), findsOneWidget);
     },
     variant: phoneOnly,
   );
@@ -254,6 +251,61 @@ void main() {
 
       expect(find.byKey(const Key('item.form')), findsNothing);
       expect(find.text('Touch Only Item'), findsOneWidget);
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'at phone width, the system back gesture from the new-customer form '
+    'returns to the customers list, not the dashboard',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: seed,
+        viewSize: const Size(390, 844),
+      );
+      container.read(routerProvider).go('/customers');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell.fab.addCustomer')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('customer.form')), findsOneWidget);
+
+      await systemBack(tester);
+
+      expect(find.byKey(const Key('customer.form')), findsNothing);
+      expect(find.byKey(const Key('customers.screen')), findsOneWidget);
+      expect(find.byKey(const Key('dashboard.search')), findsNothing);
+      // The shell chrome has to follow the pop too: a ShellRouteMatch's
+      // matchedLocation is frozen at match time, so reading it left the
+      // back arrow up and the bottom nav missing on a top-level tab.
+      expect(find.byKey(const Key('shell.bottomNav')), findsOneWidget);
+      expect(find.byKey(const Key('shell.backButton')), findsNothing);
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'at phone width, the system back gesture from the new-item form returns '
+    'to the items list, not the dashboard',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: seed,
+        viewSize: const Size(390, 844),
+      );
+      container.read(routerProvider).go('/items');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell.fab.addItem')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('item.form')), findsOneWidget);
+
+      await systemBack(tester);
+
+      expect(find.byKey(const Key('item.form')), findsNothing);
+      expect(find.byKey(const Key('items.screen')), findsOneWidget);
+      expect(find.byKey(const Key('dashboard.search')), findsNothing);
+      expect(find.byKey(const Key('shell.bottomNav')), findsOneWidget);
+      expect(find.byKey(const Key('shell.backButton')), findsNothing);
     },
     variant: phoneOnly,
   );

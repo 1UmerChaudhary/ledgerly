@@ -154,195 +154,215 @@ class _BillScreenState extends ConsumerState<BillScreen> {
         ? null
         : ref.watch(customerBalanceProvider(d.customer!.id)).value;
 
-    return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.enter, control: true): () {
-          if (d.saved == null) _save();
-        },
-        const SingleActivator(
-          LogicalKeyboardKey.numpadEnter,
-          control: true,
-        ): () {
-          if (d.saved == null) _save();
-        },
-        const SingleActivator(LogicalKeyboardKey.escape): () => _escape(d),
-        const SingleActivator(LogicalKeyboardKey.keyN, control: true): () {
-          if (d.saved != null) _ctl.startNextForSameCustomer();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyP, control: true): () {
-          final firm = ref.read(openFirmProvider).value;
-          final saved = d.saved;
-          if (firm != null && saved != null) printSlip(ref, firm, saved.id);
-        },
-        const SingleActivator(LogicalKeyboardKey.minus, control: true): () {
-          final focused = FocusManager.instance.primaryFocus?.debugLabel ?? '';
-          final m = RegExp(r'^bill\.line\.(\d+)\.').firstMatch(focused);
-          if (m != null) _ctl.removeLine(int.parse(m[1]!));
-        },
+    // The shell's generic PopScope answers the system back gesture with an
+    // unconditional context.go('/') -- which would silently drop an unsaved
+    // bill, the exact thing _escape's discard dialog exists to prevent. A
+    // PopScope nearer the leaf wins over an ancestor's, so this screen
+    // answers its own back and routes it through _escape, the same path the
+    // on-screen Cancel button and desktop Esc already take. canPop is always
+    // false because _escape navigates itself (to the ledger, the dashboard,
+    // or nowhere at all if the user keeps editing).
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _escape(d);
       },
-      child: Focus(
-        focusNode: _screenFocus,
-        child: FocusTraversalGroup(
-          policy: OrderedTraversalPolicy(),
-          child: Padding(
-            key: const Key('bill.screen'),
-            padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
-            child: ListView(
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      d.editing == null
-                          ? _title(_type)
-                          : _title(_type).replaceFirst('NEW ', 'EDIT '),
-                      style: TextStyle(
-                        fontSize: 11,
-                        letterSpacing: 1,
-                        fontWeight: FontWeight.w600,
-                        color: c.ink3,
-                      ),
-                    ),
-                    const Spacer(),
-                    if (d.saved?.displayNo case final no?)
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.enter, control: true): () {
+            if (d.saved == null) _save();
+          },
+          const SingleActivator(
+            LogicalKeyboardKey.numpadEnter,
+            control: true,
+          ): () {
+            if (d.saved == null) _save();
+          },
+          const SingleActivator(LogicalKeyboardKey.escape): () => _escape(d),
+          const SingleActivator(LogicalKeyboardKey.keyN, control: true): () {
+            if (d.saved != null) _ctl.startNextForSameCustomer();
+          },
+          const SingleActivator(LogicalKeyboardKey.keyP, control: true): () {
+            final firm = ref.read(openFirmProvider).value;
+            final saved = d.saved;
+            if (firm != null && saved != null) printSlip(ref, firm, saved.id);
+          },
+          const SingleActivator(LogicalKeyboardKey.minus, control: true): () {
+            final focused =
+                FocusManager.instance.primaryFocus?.debugLabel ?? '';
+            final m = RegExp(r'^bill\.line\.(\d+)\.').firstMatch(focused);
+            if (m != null) _ctl.removeLine(int.parse(m[1]!));
+          },
+        },
+        child: Focus(
+          focusNode: _screenFocus,
+          child: FocusTraversalGroup(
+            policy: OrderedTraversalPolicy(),
+            child: Padding(
+              key: const Key('bill.screen'),
+              padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
+              child: ListView(
+                children: [
+                  Row(
+                    children: [
                       Text(
-                        'Bill $no',
-                        style: numberStyle.copyWith(
-                          fontSize: 13,
-                          color: c.ink2,
+                        d.editing == null
+                            ? _title(_type)
+                            : _title(_type).replaceFirst('NEW ', 'EDIT '),
+                        style: TextStyle(
+                          fontSize: 11,
+                          letterSpacing: 1,
+                          fontWeight: FontWeight.w600,
+                          color: c.ink3,
                         ),
                       ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                if (d.saved case final saved?) ...[
-                  _SavedBanner(
-                    saved: saved,
-                    customer: d.customer,
-                    balance: balance,
-                  ),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      if (constraints.maxWidth >= kCompactBreakpoint) {
-                        // Desktop already has Ctrl+P/Ctrl+N/Esc for this,
-                        // shown in the key bar -- no on-screen equivalent
-                        // needed there.
-                        return const SizedBox.shrink();
-                      }
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            OutlinedButton(
-                              key: const Key('bill.compactPrint'),
-                              onPressed: () {
-                                final firm = ref.read(openFirmProvider).value;
-                                if (firm != null) {
-                                  printSlip(ref, firm, saved.id);
-                                }
-                              },
-                              child: const Text('Print'),
-                            ),
-                            const SizedBox(width: 8),
-                            FilledButton(
-                              key: const Key('bill.compactBack'),
-                              onPressed: () => _escape(d),
-                              child: const Text('Back'),
-                            ),
-                          ],
+                      const Spacer(),
+                      if (d.saved?.displayNo case final no?)
+                        Text(
+                          'Bill $no',
+                          style: numberStyle.copyWith(
+                            fontSize: 13,
+                            color: c.ink2,
+                          ),
                         ),
-                      );
-                    },
+                    ],
                   ),
-                ],
-                if (d.saved == null) ...[
-                  _Header(
-                    d: d,
-                    customers: customers,
-                    customerFocus: _customerFocus,
-                    balance: balance,
-                    onCustomer: _ctl.setCustomer,
-                    onDate: _ctl.setDate,
-                    onDescription: _ctl.setDescription,
-                    onWalkIn: _ctl.setWalkIn,
-                  ),
-                  const SizedBox(height: 14),
-                  if (d.hasLines)
+                  const SizedBox(height: 12),
+                  if (d.saved case final saved?) ...[
+                    _SavedBanner(
+                      saved: saved,
+                      customer: d.customer,
+                      balance: balance,
+                    ),
                     LayoutBuilder(
                       builder: (context, constraints) {
-                        if (constraints.maxWidth < kCompactBreakpoint) {
-                          return Column(
+                        if (constraints.maxWidth >= kCompactBreakpoint) {
+                          // Desktop already has Ctrl+P/Ctrl+N/Esc for this,
+                          // shown in the key bar -- no on-screen equivalent
+                          // needed there.
+                          return const SizedBox.shrink();
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
                             children: [
-                              for (var i = 0; i < d.lines.length; i++)
-                                LineCard(
-                                  index: i,
-                                  line: d.lines[i],
-                                  items: items,
-                                  onPickItem: (item) => _ctl.pickItem(i, item),
-                                  onEdit: (field, value) =>
-                                      _ctl.editLineField(i, field, value),
-                                  onToggleMode: () => _ctl.toggleMode(i),
-                                  onDelete: () => _ctl.removeLine(i),
-                                ),
-                              TextButton(
-                                key: const Key('bill.line.card.addLine'),
-                                onPressed: () => _ctl.addLine(),
-                                child: const Text('+ Add line'),
+                              OutlinedButton(
+                                key: const Key('bill.compactPrint'),
+                                onPressed: () {
+                                  final firm = ref.read(openFirmProvider).value;
+                                  if (firm != null) {
+                                    printSlip(ref, firm, saved.id);
+                                  }
+                                },
+                                child: const Text('Print'),
+                              ),
+                              const SizedBox(width: 8),
+                              FilledButton(
+                                key: const Key('bill.compactBack'),
+                                onPressed: () => _escape(d),
+                                child: const Text('Back'),
                               ),
                             ],
-                          );
-                        }
-                        return _LinesGrid(
-                          d: d,
-                          items: items,
-                          focusFor: _focusFor,
-                          onPickItem: _ctl.pickItem,
-                          onEdit: _ctl.editLineField,
-                          onToggleMode: _ctl.toggleMode,
-                          onEnter: (i, f) => _enterOn(i, f, d),
+                          ),
                         );
                       },
-                    )
-                  else
-                    _AmountRow(d: d, onAmount: _ctl.setAmount),
-                  const SizedBox(height: 14),
-                  _Totals(d: d, balance: balance, onOverride: _ctl.setOverride),
-                  if (d.error case final e?)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: Text(e, style: TextStyle(color: c.giveable)),
                     ),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      if (constraints.maxWidth >= kCompactBreakpoint) {
-                        // Desktop already has Ctrl+Enter/Esc for this,
-                        // shown in the key bar -- no on-screen equivalent
-                        // needed there.
-                        return const SizedBox.shrink();
-                      }
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 14),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            TextButton(
-                              key: const Key('bill.compactCancel'),
-                              onPressed: () => _escape(d),
-                              child: const Text('Cancel'),
-                            ),
-                            const SizedBox(width: 8),
-                            FilledButton(
-                              key: const Key('bill.compactSave'),
-                              onPressed: _save,
-                              child: const Text('Save'),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
+                  ],
+                  if (d.saved == null) ...[
+                    _Header(
+                      d: d,
+                      customers: customers,
+                      customerFocus: _customerFocus,
+                      balance: balance,
+                      onCustomer: _ctl.setCustomer,
+                      onDate: _ctl.setDate,
+                      onDescription: _ctl.setDescription,
+                      onWalkIn: _ctl.setWalkIn,
+                    ),
+                    const SizedBox(height: 14),
+                    if (d.hasLines)
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          if (constraints.maxWidth < kCompactBreakpoint) {
+                            return Column(
+                              children: [
+                                for (var i = 0; i < d.lines.length; i++)
+                                  LineCard(
+                                    index: i,
+                                    line: d.lines[i],
+                                    items: items,
+                                    onPickItem: (item) =>
+                                        _ctl.pickItem(i, item),
+                                    onEdit: (field, value) =>
+                                        _ctl.editLineField(i, field, value),
+                                    onToggleMode: () => _ctl.toggleMode(i),
+                                    onDelete: () => _ctl.removeLine(i),
+                                  ),
+                                TextButton(
+                                  key: const Key('bill.line.card.addLine'),
+                                  onPressed: () => _ctl.addLine(),
+                                  child: const Text('+ Add line'),
+                                ),
+                              ],
+                            );
+                          }
+                          return _LinesGrid(
+                            d: d,
+                            items: items,
+                            focusFor: _focusFor,
+                            onPickItem: _ctl.pickItem,
+                            onEdit: _ctl.editLineField,
+                            onToggleMode: _ctl.toggleMode,
+                            onEnter: (i, f) => _enterOn(i, f, d),
+                          );
+                        },
+                      )
+                    else
+                      _AmountRow(d: d, onAmount: _ctl.setAmount),
+                    const SizedBox(height: 14),
+                    _Totals(
+                      d: d,
+                      balance: balance,
+                      onOverride: _ctl.setOverride,
+                    ),
+                    if (d.error case final e?)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: Text(e, style: TextStyle(color: c.giveable)),
+                      ),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        if (constraints.maxWidth >= kCompactBreakpoint) {
+                          // Desktop already has Ctrl+Enter/Esc for this,
+                          // shown in the key bar -- no on-screen equivalent
+                          // needed there.
+                          return const SizedBox.shrink();
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 14),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton(
+                                key: const Key('bill.compactCancel'),
+                                onPressed: () => _escape(d),
+                                child: const Text('Cancel'),
+                              ),
+                              const SizedBox(width: 8),
+                              FilledButton(
+                                key: const Key('bill.compactSave'),
+                                onPressed: _save,
+                                child: const Text('Save'),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),

@@ -174,6 +174,56 @@ void main() {
     variant: phoneOnly,
   );
 
+  testWidgets(
+    'at phone width, the system back gesture returns from a pushed bill '
+    'detail to the ledger list, not the dashboard',
+    (tester) async {
+      await pumpLedgerly(
+        tester,
+        seed: seedWithOneBill,
+        viewSize: const Size(390, 844),
+      );
+      await tester.tap(find.text('Test Customer'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('ledger.compactRow.0')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('ledger.detailPanel')), findsOneWidget);
+
+      await systemBack(tester);
+
+      // Back on the ledger list -- not the dashboard, which is what a flat
+      // sibling route (nothing on the page stack to pop) used to give.
+      expect(find.byKey(const Key('ledger.detailPanel')), findsNothing);
+      expect(find.byKey(const Key('ledger.compactList')), findsOneWidget);
+      expect(find.byKey(const Key('dashboard.search')), findsNothing);
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'at phone width, the title-bar back button returns from a pushed bill '
+    'detail to the ledger list, not the dashboard',
+    (tester) async {
+      await pumpLedgerly(
+        tester,
+        seed: seedWithOneBill,
+        viewSize: const Size(390, 844),
+      );
+      await tester.tap(find.text('Test Customer'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('ledger.compactRow.0')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('shell.backButton')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('ledger.detailPanel')), findsNothing);
+      expect(find.byKey(const Key('ledger.compactList')), findsOneWidget);
+      expect(find.byKey(const Key('dashboard.search')), findsNothing);
+    },
+    variant: phoneOnly,
+  );
+
   _showDeletedTests();
   testWidgets(
     'ledger lists entries in date order with running balance, debit/credit columns and an edited badge',
