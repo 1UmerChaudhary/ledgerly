@@ -598,6 +598,11 @@ class _AmountRow extends StatelessWidget {
               key: const Key('cash.amount'),
               style: numberStyle.copyWith(fontSize: 15),
               textAlign: TextAlign.right,
+              // The only input on a cash-in/cash-out bill: a touch user
+              // otherwise gets the alphabetic keyboard to type an amount.
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               onChanged: onAmount,
               decoration: const InputDecoration(
                 contentPadding: EdgeInsets.symmetric(
@@ -1084,6 +1089,9 @@ class _Totals extends StatelessWidget {
                 key: const Key('bill.override'),
                 textAlign: TextAlign.right,
                 style: numberStyle.copyWith(fontSize: 13.5),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 onChanged: onOverride,
                 decoration: const InputDecoration(
                   contentPadding: EdgeInsets.symmetric(

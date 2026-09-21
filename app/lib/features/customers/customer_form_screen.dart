@@ -136,6 +136,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
                     key: const Key('customer.phone'),
                     controller: _phone,
                     style: numberStyle.copyWith(fontSize: 14),
+                    keyboardType: TextInputType.phone,
                     decoration: const InputDecoration(
                       hintText: '0300-1234567',
                     ),

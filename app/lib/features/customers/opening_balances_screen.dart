@@ -286,6 +286,7 @@ class _OpeningBalancesScreenState extends ConsumerState<OpeningBalancesScreen> {
       key: Key('openingBalances.row.$i.phone'),
       controller: _rows[i].phone,
       style: numberStyle.copyWith(fontSize: 14),
+      keyboardType: TextInputType.phone,
       decoration: const InputDecoration(hintText: 'Phone (optional)'),
     );
     final balance = TextField(
@@ -293,6 +294,12 @@ class _OpeningBalancesScreenState extends ConsumerState<OpeningBalancesScreen> {
       controller: _rows[i].balance,
       textAlign: TextAlign.right,
       style: numberStyle.copyWith(fontSize: 14),
+      // signed as well as decimal: a negative opening balance is what the
+      // form means by "you owe them", so the minus key has to be there.
+      keyboardType: const TextInputType.numberWithOptions(
+        decimal: true,
+        signed: true,
+      ),
       decoration: const InputDecoration(hintText: 'Balance'),
     );
     if (compact) {

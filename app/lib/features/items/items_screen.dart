@@ -325,6 +325,9 @@ class _ItemFormScreenState extends ConsumerState<ItemFormScreen> {
                     key: const Key('item.bagKg'),
                     controller: _bagKg,
                     style: numberStyle.copyWith(fontSize: 14),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     decoration: const InputDecoration(hintText: 'e.g. 50'),
                   ),
                   compact: compact,
@@ -335,6 +338,9 @@ class _ItemFormScreenState extends ConsumerState<ItemFormScreen> {
                     key: const Key('item.base'),
                     controller: _base,
                     style: numberStyle.copyWith(fontSize: 14),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     decoration: const InputDecoration(
                       hintText: '30 · 34 · 37.324 · 40 · 56',
                     ),
