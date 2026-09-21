@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ledgerly/bootstrap/router.dart';
-import 'package:ledgerly_core/ledgerly_core.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 
 import '../support/pump_app.dart';

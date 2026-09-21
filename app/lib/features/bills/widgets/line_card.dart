@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:ledgerly_core/ledgerly_core.dart';
 
+import '../../../theme/ledgerly_theme.dart';
 import '../bill_draft.dart';
 import 'item_search_sheet.dart';
 
@@ -74,21 +75,43 @@ class LineCard extends StatelessWidget {
               _numberField('bagKg', 'Bag weight (kg)', line.bagKg),
             ] else if (line.mode == SaleMode.byWeight)
               _numberField('totalKg', 'Total weight (kg)', line.totalKg),
-            Wrap(
-              spacing: 6,
-              children: [
-                for (final preset in RateBase.presets)
-                  ActionChip(
-                    key: Key(
-                      'bill.line.$index.card.basePreset.${preset.grams}',
-                    ),
-                    label: Text('${preset.grams / 1000}kg'),
-                    onPressed: () =>
-                        onEdit('base', (preset.grams / 1000).toString()),
-                  ),
-              ],
-            ),
             _numberField('rate', 'Rate', line.rate),
+            // ChoiceChip, not ActionChip: the presets were write-only before,
+            // so nothing on screen said which base was active — including the
+            // one pickItem fills in from the item's own default. The label and
+            // the value both go through formatKg(trim: true), the same
+            // spelling the desktop grid's 1-5 hotkeys write ("30", "37.324"),
+            // rather than a raw double ("30.0").
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final preset in RateBase.presets)
+                    ChoiceChip(
+                      key: Key(
+                        'bill.line.$index.card.basePreset.${preset.grams}',
+                      ),
+                      label: Text('${formatKg(preset, trim: true)}kg'),
+                      selected: line.rateBase == preset,
+                      onSelected: (_) =>
+                          onEdit('base', formatKg(preset, trim: true)),
+                    ),
+                ],
+              ),
+            ),
+            // A base outside the five presets has to be typeable: the chips
+            // alone can't express one, and the desktop grid has always had a
+            // free-text base cell.
+            _numberField('base', 'Rate base (kg)', line.base),
+            _LineTotal(
+              key: Key('bill.line.$index.card.lineTotal'),
+              // Same derivation as the desktop grid row's "Line total" cell:
+              // the calculated total, before any per-line override.
+              total: line.toLine(index + 1)?.calculatedTotal,
+            ),
+            _numberField('override', 'Override line total', line.override),
           ],
         ),
       ),
@@ -101,6 +124,37 @@ class LineCard extends StatelessWidget {
       label: label,
       value: value,
       onChanged: (v) => onEdit(field, v),
+    );
+  }
+}
+
+/// Read-only echo of what this line currently comes to, so a phone user can
+/// check a line before saving instead of only seeing the bill-level total.
+class _LineTotal extends StatelessWidget {
+  const _LineTotal({super.key, required this.total});
+  final Money? total;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Row(
+        children: [
+          Text('Line total', style: TextStyle(fontSize: 13, color: c.ink2)),
+          const Spacer(),
+          Text(
+            // A dash, not a blank, while the line is still incomplete: an
+            // empty gap reads as "zero" on a card with nothing else in it.
+            total == null ? '—' : formatMoney(total!, symbol: false),
+            style: numberStyle.copyWith(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: total == null ? c.ink3 : c.ink,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

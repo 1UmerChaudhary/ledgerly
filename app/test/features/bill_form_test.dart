@@ -59,6 +59,15 @@ Future<void> seedFirmWithItem(AppDatabase db, DeviceContext ctx) async {
   );
 }
 
+/// The base presets a line card currently shows as chosen, by label ("40",
+/// "37.324"). A list rather than a single value so a test can assert that
+/// exactly one -- or no -- chip is selected.
+List<String> selectedBaseChips(WidgetTester tester) => tester
+    .widgetList<ChoiceChip>(find.byType(ChoiceChip))
+    .where((chip) => chip.selected)
+    .map((chip) => ((chip.label as Text).data ?? '').replaceAll('kg', ''))
+    .toList();
+
 Future<void> typeInto(WidgetTester tester, Key key, String text) async {
   await tester.tap(find.byKey(key));
   await tester.pump();
@@ -249,9 +258,25 @@ void main() {
     );
     await tester.tap(find.byKey(const Key('shell.fab.newSale')));
     await tester.pumpAndSettle();
+    // "+ Add line" and then the second card both sit below the fold on a
+    // phone viewport now that each card also carries base, line total and
+    // override -- a real touch user scrolls to them. dragUntilVisible only
+    // guarantees the widget exists, so each scroll finishes with
+    // ensureVisible, which is what actually brings it into the viewport.
+    await tester.ensureVisible(find.byKey(const Key('bill.line.card.addLine')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('bill.line.card.addLine')));
     await tester.pumpAndSettle();
 
+    await tester.dragUntilVisible(
+      find.byKey(const Key('bill.line.1.card.deleteButton')),
+      find.byType(ListView),
+      const Offset(0, -300),
+    );
+    await tester.ensureVisible(
+      find.byKey(const Key('bill.line.1.card.deleteButton')),
+    );
+    await tester.pumpAndSettle();
     expect(find.byKey(const Key('bill.line.1.card')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('bill.line.1.card.deleteButton')));
@@ -346,6 +371,120 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('bill.saved')), findsOneWidget);
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'the line card shows the active base, highlights its preset chip, and '
+    'lets a non-preset base be typed',
+    (tester) async {
+      // The preset chips were write-only ActionChips: nothing on screen said
+      // which base was active, including the one pickItem fills in from the
+      // item's own default, and a base outside the five presets could not be
+      // entered at all.
+      await pumpLedgerly(
+        tester,
+        seed: seedFirmWithItem,
+        viewSize: const Size(390, 844),
+      );
+      await tester.tap(find.byKey(const Key('shell.fab.newSale')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('bill.line.0.card.itemButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Oil'));
+      await tester.pumpAndSettle();
+
+      // Oil's defaultRateBase is the maund, so its chip -- and only its chip
+      // -- comes up selected, and the base field echoes the same value.
+      expect(
+        selectedBaseChips(tester),
+        [formatKg(RateBase.maund, trim: true)],
+      );
+      expect(
+        (tester.widget<TextField>(
+          find.byKey(const Key('bill.line.0.card.base')),
+        )).controller!.text,
+        formatKg(RateBase.maund),
+      );
+
+      // Chip labels use the same spelling as the desktop grid's 1-5 hotkeys
+      // ("40kg"), not a raw double ("40.0kg").
+      expect(find.text('40kg'), findsOneWidget);
+
+      await typeInto(tester, const Key('bill.line.0.card.base'), '45');
+      expect(selectedBaseChips(tester), isEmpty);
+
+      await tester.tap(
+        find.byKey(
+          Key('bill.line.0.card.basePreset.${RateBase.forty.grams}'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(selectedBaseChips(tester), [formatKg(RateBase.forty, trim: true)]);
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'the line card shows the computed line total, and a per-line override '
+    'replaces it in the bill total',
+    (tester) async {
+      await pumpLedgerly(
+        tester,
+        seed: seedFirmWithItem,
+        viewSize: const Size(390, 844),
+      );
+      await tester.tap(find.byKey(const Key('shell.fab.newSale')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('bill.line.0.card.itemButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Oil'));
+      await tester.pumpAndSettle();
+
+      // Incomplete line: a dash, not a blank that would read as zero.
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('bill.line.0.card.lineTotal')),
+          matching: find.text('—'),
+        ),
+        findsOneWidget,
+      );
+
+      await typeInto(tester, const Key('bill.line.0.card.bags'), '10');
+      await typeInto(tester, const Key('bill.line.0.card.rate'), '9000');
+
+      // Derived through the domain rather than hardcoded, so this asserts
+      // the card shows what the desktop grid row shows for the same line.
+      final expectedLine = BillLine(
+        id: 'unused',
+        lineNo: 1,
+        itemId: 'unused',
+        saleMode: SaleMode.byBags,
+        bagCount: 10,
+        bagWeight: Weight.kg(16),
+        totalWeight: Weight.kg(160),
+        rate: Money.rupees(9000),
+        rateBase: RateBase.maund,
+      );
+      await tester.ensureVisible(
+        find.byKey(const Key('bill.line.0.card.lineTotal')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('bill.line.0.card.lineTotal')),
+          matching: find.text(
+            formatMoney(expectedLine.calculatedTotal, symbol: false),
+          ),
+        ),
+        findsOneWidget,
+      );
+
+      // The override is what the bill then totals to -- BillLine.finalTotal
+      // prefers overriddenTotal, and the draft sums finalTotal.
+      await typeInto(tester, const Key('bill.line.0.card.override'), '40000');
+      expect(find.text('Rs 40,000'), findsOneWidget);
     },
     variant: phoneOnly,
   );
