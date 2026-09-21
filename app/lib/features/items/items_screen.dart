@@ -337,6 +337,23 @@ class _ItemFormScreenState extends ConsumerState<ItemFormScreen> {
                   'Ctrl+Enter save · Esc back',
                   style: TextStyle(fontSize: 12.5, color: c.ink3),
                 ),
+                if (compact)
+                  // Same reasoning as customer_form_screen.dart's Task 11
+                  // fix: a touch-only device can never send Ctrl+Enter, so
+                  // below kCompactBreakpoint this is the only way to save.
+                  Padding(
+                    padding: const EdgeInsets.only(top: 14),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        FilledButton(
+                          key: const Key('item.compactSave'),
+                          onPressed: _save,
+                          child: const Text('Save'),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             );
             return compact ? content : SizedBox(width: 560, child: content);

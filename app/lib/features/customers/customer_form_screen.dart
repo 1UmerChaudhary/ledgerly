@@ -160,6 +160,25 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
                   'Ctrl+Enter save · Esc back',
                   style: TextStyle(fontSize: 12.5, color: c.ink3),
                 ),
+                if (compact)
+                  // Desktop already has Ctrl+Enter/Esc for this, shown in
+                  // the hint above -- no on-screen equivalent needed there.
+                  // A touch-only device can never send Ctrl+Enter, so
+                  // below kCompactBreakpoint this is the only way to save
+                  // at all, same pattern as bill_screen.dart's Task 9 fix.
+                  Padding(
+                    padding: const EdgeInsets.only(top: 14),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        FilledButton(
+                          key: const Key('customer.compactSave'),
+                          onPressed: _save,
+                          child: const Text('Save'),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             );
             return compact ? content : SizedBox(width: 560, child: content);

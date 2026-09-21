@@ -199,4 +199,62 @@ void main() {
     },
     variant: phoneOnly,
   );
+
+  testWidgets(
+    'at phone width, tapping the on-screen Save button creates a customer '
+    '(no keyboard involved)',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: seed,
+        viewSize: const Size(390, 844),
+      );
+      container.read(routerProvider).go('/customers');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell.fab.addCustomer')));
+      await tester.pumpAndSettle();
+
+      await type(tester, const Key('customer.name'), 'Touch Only Customer');
+
+      // Root cause of the real bug this guards against: this form has no
+      // on-screen Save at all below kCompactBreakpoint, only a
+      // Ctrl+Enter/numpad-Enter CallbackShortcuts binding, which a
+      // touch-only device can never send.
+      expect(find.byKey(const Key('customer.compactSave')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('customer.compactSave')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('customer.form')), findsNothing);
+      expect(find.text('Touch Only Customer'), findsOneWidget);
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'at phone width, tapping the on-screen Save button creates an item '
+    '(no keyboard involved)',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: seed,
+        viewSize: const Size(390, 844),
+      );
+      container.read(routerProvider).go('/items');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('shell.fab.addItem')));
+      await tester.pumpAndSettle();
+
+      await type(tester, const Key('item.name'), 'Touch Only Item');
+
+      // Same root cause as the customer form above: no on-screen Save
+      // below kCompactBreakpoint, only Ctrl+Enter/numpad-Enter.
+      expect(find.byKey(const Key('item.compactSave')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('item.compactSave')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('item.form')), findsNothing);
+      expect(find.text('Touch Only Item'), findsOneWidget);
+    },
+    variant: phoneOnly,
+  );
 }
