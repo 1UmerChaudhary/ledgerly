@@ -125,46 +125,146 @@ class AppShell extends ConsumerWidget {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final compact = constraints.maxWidth < kCompactBreakpoint;
-            return Scaffold(
-              backgroundColor: c.paper,
-              body: Column(
-                children: [
-                  _TitleBar(
-                    firmName: settings?.name ?? firm?.firmName ?? l10n.appName,
-                    deviceCode: firm?.ctx.deviceShortCode,
-                    backup: backup,
-                    showBackButton: compact && !isTopLevelRoute(location),
+            return PopScope(
+              // At a top-level route there's nowhere sensible to "go back"
+              // to, so the system back gesture keeps its normal behaviour
+              // (backgrounds/exits the app). At a drill-down route it must
+              // match the in-app back button in _TitleBar exactly, which
+              // falls through to context.go('/') because every navigation
+              // in this app uses go() (replace), never push() -- so
+              // context.canPop() is always false.
+              canPop: isTopLevelRoute(location),
+              onPopInvokedWithResult: (didPop, result) {
+                if (!didPop && !isTopLevelRoute(location)) {
+                  context.go('/');
+                }
+              },
+              child: Scaffold(
+                backgroundColor: c.paper,
+                body: SafeArea(
+                  child: Column(
+                    children: [
+                      _TitleBar(
+                        firmName:
+                            settings?.name ?? firm?.firmName ?? l10n.appName,
+                        deviceCode: firm?.ctx.deviceShortCode,
+                        backup: backup,
+                        showBackButton: compact && !isTopLevelRoute(location),
+                      ),
+                      Expanded(
+                        child: compact
+                            ? child
+                            : Row(
+                                children: [
+                                  _Rail(location: location),
+                                  Expanded(child: child),
+                                ],
+                              ),
+                      ),
+                      if (!compact) _KeyBar(hints: hints),
+                    ],
                   ),
-                  Expanded(
-                    child: compact
-                        ? child
-                        : Row(
-                            children: [
-                              _Rail(location: location),
-                              Expanded(child: child),
-                            ],
-                          ),
-                  ),
-                  if (!compact) _KeyBar(hints: hints),
-                ],
+                ),
+                bottomNavigationBar:
+                    compact && isTopLevelRoute(location)
+                    ? _CompactNav(location: location)
+                    : null,
+                floatingActionButton: compact
+                    ? _fabFor(context, location)
+                    : null,
               ),
-              bottomNavigationBar:
-                  compact && isTopLevelRoute(location)
-                  ? _CompactNav(location: location)
-                  : null,
-              floatingActionButton:
-                  compact && isTopLevelRoute(location)
-                  ? FloatingActionButton(
-                      key: const Key('shell.fab.newSale'),
-                      onPressed: () => context.go('/bills/new?type=sale'),
-                      child: const Icon(Icons.add),
-                    )
-                  : null,
             );
           },
         ),
       ),
     );
+  }
+}
+
+/// Builds the compact-width FAB for [location], or null when that route has
+/// nothing to "add" (settings) or isn't a top-level destination at all
+/// (defensive -- [_fabConfigFor]'s switch only lists top-level routes).
+Widget? _fabFor(BuildContext context, String location) {
+  final config = _fabConfigFor(location);
+  if (config == null) return null;
+  return FloatingActionButton(
+    key: config.key,
+    onPressed: () => config.onPressed(context),
+    child: Icon(config.icon),
+  );
+}
+
+class _FabConfig {
+  const _FabConfig({
+    required this.key,
+    required this.icon,
+    required this.onPressed,
+  });
+  final Key key;
+  final IconData icon;
+  final void Function(BuildContext) onPressed;
+}
+
+_FabConfig? _fabConfigFor(String location) {
+  switch (location) {
+    case '/':
+      return _FabConfig(
+        key: const Key('shell.fab.newSale'),
+        icon: Icons.add,
+        onPressed: (context) => context.go('/bills/new?type=sale'),
+      );
+    case '/customers':
+      return _FabConfig(
+        key: const Key('shell.fab.addCustomer'),
+        icon: Icons.person_add,
+        onPressed: (context) => context.go('/customers/new'),
+      );
+    case '/items':
+      return _FabConfig(
+        key: const Key('shell.fab.addItem'),
+        icon: Icons.add,
+        onPressed: (context) => context.go('/items/new'),
+      );
+    case '/cash-sales':
+      return _FabConfig(
+        key: const Key('shell.fab.cashChooser'),
+        icon: Icons.add,
+        onPressed: _chooseCashDirection,
+      );
+    default:
+      // /settings has nothing to "add"; anything else isn't a top-level
+      // route and shouldn't reach here, but no FAB is the safe default.
+      return null;
+  }
+}
+
+/// Desktop has separate Ctrl+I/Ctrl+O shortcuts for cash in vs cash out with
+/// no single obvious default, so the touch FAB offers the same choice via a
+/// dialog instead of picking one for the user -- same showDialog +
+/// SimpleDialog/SimpleDialogOption convention as settings_screen.dart's
+/// printer picker.
+Future<void> _chooseCashDirection(BuildContext context) async {
+  final choice = await showDialog<String>(
+    context: context,
+    builder: (dialogContext) => SimpleDialog(
+      key: const Key('shell.cashChooserDialog'),
+      title: const Text('Record cash'),
+      children: [
+        SimpleDialogOption(
+          key: const Key('shell.cashChooserDialog.cashIn'),
+          onPressed: () => Navigator.of(dialogContext).pop('cash_in'),
+          child: const Text('Cash in'),
+        ),
+        SimpleDialogOption(
+          key: const Key('shell.cashChooserDialog.cashOut'),
+          onPressed: () => Navigator.of(dialogContext).pop('cash_out'),
+          child: const Text('Cash out'),
+        ),
+      ],
+    ),
+  );
+  if (choice != null && context.mounted) {
+    context.go('/bills/new?type=$choice');
   }
 }
 
