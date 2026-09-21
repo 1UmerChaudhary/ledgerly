@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 
@@ -19,34 +20,49 @@ final thermalPrinterServiceProvider = Provider<ThermalPrinterService>(
 
 /// Builds the slip, sends it to the printer, and logs the print — the one
 /// path every "print this bill" action goes through, whether triggered from
-/// the bill form's Saved state or later from the ledger. A saved Bluetooth
-/// printer is tried first; a missing printer, or a failed connect/write (off,
-/// out of range, unpaired), falls through to the OS print path below instead
-/// of failing silently — the same "ask" degradation the app already uses
-/// everywhere else nothing is configured.
+/// the bill form's Saved state or later from the ledger. On Android a saved
+/// Bluetooth printer is tried first; anything short of a clean connect *and*
+/// write — no printer saved, a refused connect, a failed write, or a thrown
+/// PlatformException (adapter off, bond lost mid-write, permission revoked) —
+/// falls through to the OS print path below instead of failing silently, the
+/// same "ask" degradation the app already uses everywhere nothing is
+/// configured.
 Future<void> printSlip(WidgetRef ref, OpenFirm firm, String billId) async {
+  // Built once, ahead of the branch: both paths render the same SlipModel,
+  // and calling slipFor twice would stamp two different printedAt times for
+  // one print.
+  final slip = await firm.bills.slipFor(billId, printedAt: firm.ctx.stamp());
   final mac = ref.read(globalPrefsProvider).thermalPrinterMac;
-  if (mac != null) {
+  // Bluetooth thermal printing is Android-only by design — desktop renders
+  // the same slip to PDF for its configured OS printer. Without this gate a
+  // desktop user who once saved a Bluetooth printer would silently stop
+  // printing to that OS printer.
+  if (mac != null && defaultTargetPlatform == TargetPlatform.android) {
     final service = ref.read(thermalPrinterServiceProvider);
-    if (await service.connect(mac)) {
-      final slip = await firm.bills.slipFor(
-        billId,
-        printedAt: firm.ctx.stamp(),
-      );
-      final wrote = await service.writeBytes(buildSlipEscPos(slip));
-      await service.disconnect();
-      if (wrote) {
-        await firm.bills.logPrint(
-          kind: 'slip',
-          transactionId: billId,
-          printedAt: slip.printedAt,
-          printedBalanceAfter: slip.newBalance,
-        );
-        return;
+    try {
+      try {
+        if (await service.connect(mac) &&
+            await service.writeBytes(buildSlipEscPos(slip))) {
+          await firm.bills.logPrint(
+            kind: 'slip',
+            transactionId: billId,
+            printedAt: slip.printedAt,
+            printedBalanceAfter: slip.newBalance,
+          );
+          return;
+        }
+      } finally {
+        // Every exit — the success return, a clean refusal, or a throw —
+        // releases the socket. Skipping it on the throw path left the
+        // Bluetooth connection open with nothing holding a reference.
+        await service.disconnect();
       }
+    } on Exception {
+      // Deliberately swallowed: the PDF path below is the fallback the spec
+      // asks for. Propagating here would leave a button's onPressed with an
+      // unhandled async error — no print, no fallback, no message.
     }
   }
-  final slip = await firm.bills.slipFor(billId, printedAt: firm.ctx.stamp());
   final bytes = await buildSlipPdf(slip);
   await ref
       .read(printingServiceProvider)

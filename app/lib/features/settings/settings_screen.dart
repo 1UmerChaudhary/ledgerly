@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -398,31 +399,36 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       compact: compact,
                     ),
                   ]),
-                  _section(context, 'Bluetooth printer', [
-                    _field(
-                      'Thermal printer',
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              ref
-                                      .watch(globalPrefsProvider)
-                                      .thermalPrinterName ??
-                                  'None selected',
-                              style: TextStyle(color: c.ink2),
+                  // Android-only, matching printSlip's own gate: on desktop
+                  // the Bluetooth path is never taken, so offering the
+                  // picker there would only let a user reroute their slips
+                  // away from the OS printer they configured above.
+                  if (defaultTargetPlatform == TargetPlatform.android)
+                    _section(context, 'Bluetooth printer', [
+                      _field(
+                        'Thermal printer',
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                ref
+                                        .watch(globalPrefsProvider)
+                                        .thermalPrinterName ??
+                                    'None selected',
+                                style: TextStyle(color: c.ink2),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 14),
-                          OutlinedButton(
-                            key: const Key('settings.thermalPrinterPicker'),
-                            onPressed: _chooseThermalPrinter,
-                            child: const Text('Choose printer…'),
-                          ),
-                        ],
+                            const SizedBox(width: 14),
+                            OutlinedButton(
+                              key: const Key('settings.thermalPrinterPicker'),
+                              onPressed: _chooseThermalPrinter,
+                              child: const Text('Choose printer…'),
+                            ),
+                          ],
+                        ),
+                        compact: compact,
                       ),
-                      compact: compact,
-                    ),
-                  ]),
+                    ]),
                   _section(context, 'Cloud sync', [
                     _field(
                       'Server',

@@ -285,6 +285,26 @@ void main() {
 
       expect(find.textContaining('MPT-II'), findsWidgets);
     },
+    // Android-only now: the section this drives is gated to the platform the
+    // Bluetooth print path actually runs on (was windowsOnly).
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'the Bluetooth printer section is not offered on desktop',
+    (tester) async {
+      // print_bluetooth_thermal never runs on Windows/macOS, so a printer
+      // chosen there could only reroute slips away from the OS printer.
+      await pumpLedgerly(tester, seed: seed);
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+
+      expect(find.byKey(const Key('settings.choosePrinter')), findsOneWidget);
+      expect(
+        find.byKey(const Key('settings.thermalPrinterPicker')),
+        findsNothing,
+      );
+      expect(find.text('Bluetooth printer'), findsNothing);
+    },
     variant: windowsOnly,
   );
 

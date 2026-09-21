@@ -129,6 +129,89 @@ void main() {
     variant: phoneOnly,
   );
 
+  for (final (name, arm)
+      in <(String, void Function(FakeThermalPrinterService))>[
+        ('connect', (FakeThermalPrinterService t) => t.throwOnConnect = true),
+        ('write', (FakeThermalPrinterService t) => t.throwOnWrite = true),
+      ]) {
+    testWidgets(
+      'a PlatformException thrown from $name falls through to the PDF path '
+      'and still disconnects',
+      (tester) async {
+        // The real plugin throws (adapter off, bond lost mid-write,
+        // permission revoked) rather than returning false. Unhandled, that
+        // escaped printSlip as an async error from a button's onPressed:
+        // no print, no PDF fallback, no message, and a socket left open.
+        final container = await pumpLedgerly(
+          tester,
+          seed: seedMillPhone,
+          viewSize: const Size(390, 844),
+        );
+        await container
+            .read(globalPrefsProvider)
+            .setThermalPrinter(name: 'MPT-II', mac: '00:11:22:33:44:55');
+        arm(
+          container.read(thermalPrinterServiceProvider)
+              as FakeThermalPrinterService,
+        );
+        await pressCtrl(tester, LogicalKeyboardKey.keyI);
+        await tester.enterText(
+          find.byKey(const Key('bill.customer')),
+          'Rashid',
+        );
+        await tester.sendKeyEvent(
+          LogicalKeyboardKey.enter,
+          platform: 'windows',
+        );
+        await tester.enterText(find.byKey(const Key('cash.amount')), '1000');
+        await pressCtrl(tester, LogicalKeyboardKey.enter);
+
+        await pressCtrl(tester, LogicalKeyboardKey.keyP);
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        final thermal = container.read(
+          thermalPrinterServiceProvider,
+        ) as FakeThermalPrinterService;
+        expect(thermal.disconnected, isTrue);
+        final printing =
+            container.read(printingServiceProvider) as FakePrintingService;
+        expect(printing.printedJobs.length, 1); // fell through correctly
+      },
+      variant: phoneOnly,
+    );
+  }
+
+  testWidgets(
+    'on desktop a saved Bluetooth printer is ignored: slips keep going to '
+    'the configured OS printer',
+    (tester) async {
+      // Bluetooth thermal printing is scoped to Android. A desktop user who
+      // once saved a printer must not have their slips silently rerouted.
+      final container = await pumpLedgerly(tester, seed: seedMill);
+      await container
+          .read(globalPrefsProvider)
+          .setThermalPrinter(name: 'MPT-II', mac: '00:11:22:33:44:55');
+      await pressCtrl(tester, LogicalKeyboardKey.keyI);
+      await tester.enterText(find.byKey(const Key('bill.customer')), 'Rashid');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter, platform: 'windows');
+      await tester.enterText(find.byKey(const Key('cash.amount')), '1000');
+      await pressCtrl(tester, LogicalKeyboardKey.enter);
+
+      await pressCtrl(tester, LogicalKeyboardKey.keyP);
+      await tester.pumpAndSettle();
+
+      final thermal = container.read(
+        thermalPrinterServiceProvider,
+      ) as FakeThermalPrinterService;
+      expect(thermal.connectedMac, isNull); // never even tried
+      final printing =
+          container.read(printingServiceProvider) as FakePrintingService;
+      expect(printing.printedJobs.length, 1);
+    },
+    variant: windowsOnly,
+  );
+
   testWidgets(
     'a connected printer that fails mid-write still falls back to the PDF path, and still disconnects',
     (tester) async {

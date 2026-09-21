@@ -248,17 +248,29 @@ class FakeThermalPrinterService implements ThermalPrinterService {
   /// (out of paper, jammed, dropped mid-write).
   bool writeSucceeds = true;
 
+  /// Set to simulate what the real plugin does when the adapter is off, the
+  /// bond was dropped, or the Bluetooth permission was revoked: it throws a
+  /// PlatformException rather than returning false.
+  bool throwOnConnect = false;
+  bool throwOnWrite = false;
+
   @override
   Future<List<BluetoothPrinterInfo>> pairedPrinters() async => paired;
 
   @override
   Future<bool> connect(String mac) async {
     connectedMac = mac;
+    if (throwOnConnect) {
+      throw PlatformException(code: 'BT_OFF', message: 'adapter is off');
+    }
     return connectSucceeds;
   }
 
   @override
   Future<bool> writeBytes(Uint8List bytes) async {
+    if (throwOnWrite) {
+      throw PlatformException(code: 'BT_LOST', message: 'bond lost');
+    }
     written.add(bytes);
     return writeSucceeds;
   }
