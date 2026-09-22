@@ -1,12 +1,15 @@
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
+from app.deps import get_current_user_id
 from app.security import (
     create_access_token,
     hash_password,
@@ -16,6 +19,25 @@ from app.security import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Extend as desktop OAuth support is added later -- write this as a list from
+# the start rather than a single string, per the design spec.
+GOOGLE_AUDIENCE_ALLOWLIST = [
+    # TODO(you): paste the web client ID from Task 9
+    "REPLACE-WITH-THE-WEB-CLIENT-ID.apps.googleusercontent.com",
+]
+
+
+def verify_google_id_token(token: str) -> dict:
+    # A thin wrapper so tests can patch this one call rather than mocking
+    # Google's actual verification internals.
+    payload = google_id_token.verify_oauth2_token(token, google_requests.Request())
+    if payload.get("aud") not in GOOGLE_AUDIENCE_ALLOWLIST:
+        raise HTTPException(status_code=401, detail="Invalid token audience.")
+    if payload.get("iss") not in ("accounts.google.com", "https://accounts.google.com"):
+        raise HTTPException(status_code=401, detail="Invalid token issuer.")
+    return payload
+
 
 # A refresh token outlives the access token by a lot on purpose: it is what
 # lets a device stay signed in between app launches without re-typing a
@@ -82,6 +104,16 @@ class LoginRequest(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+
+
+class GoogleAuthRequest(BaseModel):
+    id_token: str
+    firm: FirmInfo
+    device: DeviceInfo
+
+
+class GoogleLinkRequest(BaseModel):
+    id_token: str
 
 
 class UserOut(BaseModel):
@@ -303,3 +335,151 @@ async def refresh(
     return RefreshResponse(
         access_token=create_access_token(str(row.user_id)), refresh_token=new_token
     )
+
+
+@router.post("/google", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+async def google_sign_in(
+    body: GoogleAuthRequest,
+    db: AsyncSession = Depends(get_db),  # noqa: B008 -- FastAPI Depends()
+) -> TokenResponse:
+    payload = verify_google_id_token(body.id_token)
+    sub = payload["sub"]
+    email = payload.get("email")
+    email_verified = payload.get("email_verified", False)
+
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT u.id, u.name, u.email, f.id AS firm_id, f.name AS firm_name
+                FROM users u
+                JOIN firm_members fm ON fm.user_id = u.id AND fm.deleted_at IS NULL
+                JOIN firms f ON f.id = fm.firm_id
+                WHERE u.google_sub = :sub AND u.deleted_at IS NULL
+                """
+            ),
+            {"sub": sub},
+        )
+    ).one_or_none()
+    if row is not None:
+        return await _issue_tokens(
+            db,
+            user_id=str(row.id),
+            name=row.name,
+            email=row.email,
+            device_id=body.device.id,
+            firm=FirmOut(id=str(row.firm_id), name=row.firm_name),
+        )
+
+    if email and email_verified:
+        existing = (
+            await db.execute(
+                text("SELECT id FROM users WHERE email = :email AND deleted_at IS NULL"),
+                {"email": email},
+            )
+        ).one_or_none()
+        if existing is not None:
+            # A password account with this email already exists. Do NOT
+            # auto-link -- that would let anyone who can present a Google
+            # token for this email take over an account they never proved
+            # ownership of via its actual password. The app must send the
+            # user to log in normally, then call /auth/google/link once
+            # authenticated.
+            raise HTTPException(status_code=409, detail="email_exists_unlinked")
+
+    # No google_sub match, no email match (or email unverified) -- first-time
+    # registration, identical shape to /auth/register except no password.
+    now = int(time.time())
+    try:
+        await db.execute(
+            text(
+                """
+                INSERT INTO firms (id, name, contact_number, number_grouping, created_at,
+                                    updated_at, updated_by_device_id)
+                VALUES (:id, :name, :contact_number, :number_grouping, :now, :now, :device_id)
+                """
+            ),
+            {
+                "id": body.firm.id,
+                "name": body.firm.name,
+                "contact_number": body.firm.contact_number,
+                "number_grouping": DEFAULT_NUMBER_GROUPING,
+                "now": now,
+                "device_id": body.device.id,
+            },
+        )
+        user_row = (
+            await db.execute(
+                text(
+                    """
+                    INSERT INTO users (name, email, google_sub, created_at, updated_at,
+                                        updated_by_device_id)
+                    VALUES (:name, :email, :sub, :now, :now, :device_id)
+                    RETURNING id
+                    """
+                ),
+                {
+                    "name": payload.get("name", email or "Google user"),
+                    "email": email,
+                    "sub": sub,
+                    "now": now,
+                    "device_id": body.device.id,
+                },
+            )
+        ).one()
+        user_id = str(user_row.id)
+        await db.execute(
+            text(
+                """
+                INSERT INTO firm_members (firm_id, user_id, role, created_at, updated_at,
+                                           updated_by_device_id)
+                VALUES (:firm_id, :user_id, 'owner', :now, :now, :device_id)
+                """
+            ),
+            {"firm_id": body.firm.id, "user_id": user_id, "now": now, "device_id": body.device.id},
+        )
+        await db.execute(
+            text(
+                """
+                INSERT INTO devices (id, firm_id, name, platform, short_code, created_at,
+                                      updated_at, updated_by_device_id)
+                VALUES (:id, :firm_id, :name, :platform, :short_code, :now, :now, :id)
+                """
+            ),
+            {
+                "id": body.device.id,
+                "firm_id": body.firm.id,
+                "name": body.device.name,
+                "platform": body.device.platform,
+                "short_code": body.device.short_code,
+                "now": now,
+            },
+        )
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="That account already exists.") from e
+
+    return await _issue_tokens(
+        db,
+        user_id=user_id,
+        name=payload.get("name", email or "Google user"),
+        email=email or "",
+        device_id=body.device.id,
+        firm=FirmOut(id=body.firm.id, name=body.firm.name),
+    )
+
+
+@router.post("/google/link", status_code=status.HTTP_204_NO_CONTENT)
+async def google_link(
+    body: GoogleLinkRequest,
+    current_user_id: str = Depends(get_current_user_id),  # noqa: B008 -- FastAPI Depends()
+    db: AsyncSession = Depends(get_db),  # noqa: B008 -- FastAPI Depends()
+) -> None:
+    payload = verify_google_id_token(body.id_token)
+    if not payload.get("email_verified", False):
+        raise HTTPException(status_code=400, detail="Google account email is not verified.")
+    await db.execute(
+        text("UPDATE users SET google_sub = :sub WHERE id = :id AND deleted_at IS NULL"),
+        {"sub": payload["sub"], "id": current_user_id},
+    )
+    await db.commit()
