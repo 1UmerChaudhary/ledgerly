@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:ledgerly_data/ledgerly_data.dart';
 
 import '../../bootstrap/providers.dart';
 import '../../l10n/app_localizations.dart';
 import '../../theme/ledgerly_theme.dart';
+import '../encryption/encryption_setup_screen.dart';
 
 class FirstLaunchScreen extends ConsumerStatefulWidget {
   const FirstLaunchScreen({super.key});
@@ -19,6 +21,13 @@ class _FirstLaunchScreenState extends ConsumerState<FirstLaunchScreen> {
   final _address = TextEditingController();
   String? _error;
   bool _busy = false;
+  bool _encrypt = false;
+
+  /// Minted here rather than inside [createFirstFirm] because the envelope
+  /// has to exist, and its master key has to be in this session, BEFORE the
+  /// database file is created — that is what makes a firm encrypted from its
+  /// first byte instead of migrated afterwards.
+  String? _enrolledFirmId;
 
   @override
   void dispose() {
@@ -28,15 +37,23 @@ class _FirstLaunchScreenState extends ConsumerState<FirstLaunchScreen> {
     super.dispose();
   }
 
-  Future<void> _create() async {
+  bool _detailsMissing() {
     final l10n = L10n.of(context);
-    if (_name.text.trim().isEmpty || _contact.text.trim().isEmpty) {
-      setState(
-        () =>
-            _error = '${l10n.firmName} and ${l10n.contactNumber} are required.',
-      );
-      return;
+    if (_name.text.trim().isNotEmpty && _contact.text.trim().isNotEmpty) {
+      return false;
     }
+    setState(
+      () => _error = '${l10n.firmName} and ${l10n.contactNumber} are required.',
+    );
+    return true;
+  }
+
+  Future<void> _create() async {
+    // With encryption chosen, the enrolment panel owns creation: the firm
+    // must not exist until its key does. Ctrl+Enter falls through to nothing
+    // here rather than creating a plaintext firm behind the panel's back.
+    if (_encrypt) return;
+    if (_detailsMissing()) return;
     setState(() => _busy = true);
     await ref
         .read(firmCreatorProvider)
@@ -44,6 +61,51 @@ class _FirstLaunchScreenState extends ConsumerState<FirstLaunchScreen> {
           name: _name.text.trim(),
           contactNumber: _contact.text.trim(),
           address: _address.text.trim().isEmpty ? null : _address.text.trim(),
+        );
+  }
+
+  /// Writes the envelope for a firm that does not exist yet. If the user
+  /// abandons the wizard here, all that is left behind is an orphan
+  /// `<id>.key.json` for an id nothing ever references.
+  Future<String> _enrol(String passphrase) async {
+    if (_detailsMissing()) {
+      throw const EncryptionSetupFailure(
+        'Fill in the firm name and contact number first.',
+      );
+    }
+    final firmId = _enrolledFirmId ?? newId();
+    _enrolledFirmId = firmId;
+    late String recoveryCode;
+    await ref
+        .read(encryptionServiceProvider)
+        .enableEncryption(
+          firmId,
+          passphrase: passphrase,
+          onRecoveryCodeGenerated: (code) => recoveryCode = code,
+        );
+    return recoveryCode;
+  }
+
+  Future<void> _createEncrypted(String passphrase) async {
+    final firmId = _enrolledFirmId!;
+    final masterKey = await ref
+        .read(encryptionServiceProvider)
+        .unlockWithPassphrase(firmId, passphrase);
+    if (masterKey == null) {
+      throw const EncryptionSetupFailure(
+        'The passphrase did not open the new key.',
+      );
+    }
+    // Before create: the database opener reads this to key the connection,
+    // and that connection is the one that creates the file.
+    ref.read(firmMasterKeyProvider.notifier).state = masterKey;
+    await ref
+        .read(firmCreatorProvider)
+        .create(
+          name: _name.text.trim(),
+          contactNumber: _contact.text.trim(),
+          address: _address.text.trim().isEmpty ? null : _address.text.trim(),
+          firmId: firmId,
         );
   }
 
@@ -112,25 +174,49 @@ class _FirstLaunchScreenState extends ConsumerState<FirstLaunchScreen> {
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(_error!, style: TextStyle(color: c.giveable)),
                   ),
-                const SizedBox(height: 22),
-                FilledButton(
-                  onPressed: _busy ? null : _create,
-                  style: FilledButton.styleFrom(backgroundColor: c.accent),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(l10n.createFirm),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Ctrl+Enter',
-                        style: numberStyle.copyWith(
-                          fontSize: 11,
-                          color: Colors.white70,
-                        ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Switch(
+                      key: const Key('setup.enableEncryption'),
+                      value: _encrypt,
+                      onChanged: (on) => setState(() => _encrypt = on),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Protect this firm with a passphrase',
+                        style: TextStyle(color: c.ink2),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 12),
+                if (_encrypt)
+                  EncryptionEnrolmentPanel(
+                    generate: _enrol,
+                    commit: _createEncrypted,
+                    commitLabel: l10n.createFirm,
+                  )
+                else
+                  FilledButton(
+                    onPressed: _busy ? null : _create,
+                    style: FilledButton.styleFrom(backgroundColor: c.accent),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(l10n.createFirm),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Ctrl+Enter',
+                          style: numberStyle.copyWith(
+                            fontSize: 11,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),

@@ -199,6 +199,10 @@ Future<RestoreOutcome> restoreFromPickedFile(
   await firm.db.close();
   await service.restoreFrom(File(path)); // re-validates; the file cannot
   // have changed between the check above and here within one user action.
+  // The gate, not just the firm: the file on disk is a different one now, so
+  // it goes through the same interrupted-migration and plaintext-copy checks
+  // every other firm-open does rather than reusing this session's answer.
+  ref.invalidate(firmGateProvider);
   ref.invalidate(openFirmProvider);
   return RestoreOutcome.success;
 }

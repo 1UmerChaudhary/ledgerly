@@ -9,6 +9,8 @@ import '../features/customers/customers_screen.dart';
 import '../features/customers/opening_balances_screen.dart';
 import '../features/items/items_screen.dart';
 import '../features/dashboard/dashboard_screen.dart';
+import '../features/encryption/encryption_setup_screen.dart';
+import '../features/encryption/unlock_screen.dart';
 import '../features/ledger/ledger_detail_screen.dart';
 import '../features/ledger/ledger_screen.dart';
 import '../features/settings/settings_screen.dart';
@@ -22,21 +24,63 @@ class _Refresh extends ChangeNotifier {
 
 final routerProvider = Provider<GoRouter>((ref) {
   final refresh = _Refresh();
-  ref.listen(openFirmProvider, (_, _) => refresh.poke());
+  // onError on both: a listener without one RETHROWS whatever the provider
+  // failed with, out of whichever zone happened to be running -- which lands
+  // as an unexplained "exception during redirect" instead of the error state
+  // the redirect below is written to handle. Failing to open a firm is a
+  // state this router routes on, not a crash.
+  ref.listen(
+    openFirmProvider,
+    (_, _) => refresh.poke(),
+    onError: (_, _) => refresh.poke(),
+  );
+  // The gate decides between the unlock screen, first-launch setup and the
+  // firm itself, and openFirmProvider only ever settles after it -- so a
+  // gate change that leaves openFirmProvider untouched (locking, say) still
+  // has to move the app.
+  ref.listen(
+    firmGateProvider,
+    (_, _) => refresh.poke(),
+    onError: (_, _) => refresh.poke(),
+  );
+  ref.listen(passphraseResetRequiredProvider, (_, _) => refresh.poke());
   ref.onDispose(refresh.dispose);
   return GoRouter(
     initialLocation: '/',
     refreshListenable: refresh,
     redirect: (context, state) {
-      final firm = ref.read(openFirmProvider);
       final at = state.matchedLocation;
+      // Encryption comes first, before anything reads the firm: an encrypted
+      // firm with no key in this session must not have its database opened
+      // at all, and a firm whose database could not be classified must not
+      // be opened even to find out what is in it.
+      final gate = ref.read(firmGateProvider);
+      if (gate.isLoading) {
+        return at == '/loading' ? null : '/loading';
+      }
+      final status = gate.value?.gate;
+      if (gate.hasError ||
+          status == FirmGate.locked ||
+          status == FirmGate.unverifiable) {
+        return at == '/unlock' ? null : '/unlock';
+      }
+      // Unlocked by recovery code: the replacement passphrase is not
+      // optional and not deferrable, so every other location bounces back
+      // here until it is set.
+      if (ref.read(passphraseResetRequiredProvider)) {
+        return at == '/unlock/new-passphrase' ? null : '/unlock/new-passphrase';
+      }
+      final firm = ref.read(openFirmProvider);
       if (firm.isLoading) {
         return at == '/loading' ? null : '/loading';
       }
       if (firm.value == null) {
         return at == '/setup' ? null : '/setup';
       }
-      if (at == '/setup' || at == '/loading') {
+      if (at == '/setup' ||
+          at == '/loading' ||
+          at == '/unlock' ||
+          at == '/unlock/new-passphrase') {
         return '/';
       }
       return null;
@@ -51,6 +95,18 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(path: '/setup', builder: (_, _) => const FirstLaunchScreen()),
+      // Outside the ShellRoute, same as /setup: the navigation rail and the
+      // title bar read the open firm, and there is no open firm to read yet.
+      GoRoute(
+        path: '/unlock',
+        builder: (_, _) => const UnlockScreen(),
+        routes: [
+          GoRoute(
+            path: 'new-passphrase',
+            builder: (_, _) => const NewPassphraseScreen(),
+          ),
+        ],
+      ),
       ShellRoute(
         // `state.uri.path`, not `state.matchedLocation`: a ShellRouteMatch
         // stores its matchedLocation once, when the shell was first matched,
@@ -69,6 +125,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
         routes: [
           GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
+          // Inside the shell: the firm is open and readable while this runs,
+          // and the wizard is a drill-down from Settings like any other.
+          GoRoute(
+            path: '/encryption/setup',
+            builder: (_, _) => const EncryptionSetupScreen(),
+          ),
           GoRoute(path: '/', builder: (_, _) => const DashboardScreen()),
           // Drill-downs are declared as nested `routes:` children of the list
           // they were launched from, not as flat siblings. Every navigation

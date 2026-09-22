@@ -12,6 +12,8 @@ import 'package:ledgerly/app.dart';
 import 'package:ledgerly/bootstrap/app_paths.dart';
 import 'package:ledgerly/bootstrap/global_prefs.dart';
 import 'package:ledgerly/bootstrap/providers.dart';
+import 'package:ledgerly/features/encryption/encryption_service.dart';
+import 'package:ledgerly/features/encryption/encryption_setup_screen.dart';
 import 'package:ledgerly_core/ledgerly_core.dart';
 import 'package:ledgerly/features/settings/cloud_sync_providers.dart';
 import 'package:ledgerly/features/settings/settings_providers.dart';
@@ -25,10 +27,17 @@ import 'package:ledgerly_data/ledgerly_data.dart';
 /// [windowsOnly] or [phoneOnly] so key handling and focus traversal behave as on the target OS. When [seed] is given it
 /// runs before the first frame with an already-created firm, so the app opens
 /// on the dashboard instead of the setup screen. [viewSize] sets the logical viewport size; defaults to desktop dimensions (1280×800).
+/// The firm [pumpLedgerly] seeds. Tests that need to talk about the firm
+/// before the app is pumped (putting it into the encrypted state, say) need
+/// the same id the harness is about to use.
+const testFirmId = '11111111-1111-4111-8111-111111111111';
+
 Future<ProviderContainer> pumpLedgerly(
   WidgetTester tester, {
   Future<void> Function(AppDatabase db, DeviceContext ctx)? seed,
   Size viewSize = const Size(1280, 800),
+  FakeEncryptionService? encryption,
+  FakePlaintextBackupCleaner? backupCleaner,
 }) async {
   // Every test opens its own in-memory database (plus FakeBackupService's
   // own throwaway one), which drift otherwise warns about as if it were the
@@ -39,7 +48,7 @@ Future<ProviderContainer> pumpLedgerly(
   addTearDown(tester.view.reset);
 
   final prefs = InMemoryGlobalPrefs();
-  const firmId = '11111111-1111-4111-8111-111111111111';
+  const firmId = testFirmId;
   var clock = 1000;
   DeviceContext makeCtx() => DeviceContext(
     firmId: firmId,
@@ -101,6 +110,16 @@ Future<ProviderContainer> pumpLedgerly(
       restoreServiceProvider.overrideWithValue(fakeRestoreService),
       httpClientProvider.overrideWithValue(fakeHttp),
       databaseOpenerProvider.overrideWithValue(openDb),
+      // Same reasoning as the fakes above: EncryptionService is all real file
+      // I/O, which wedges the widget tester here. Its real behaviour --
+      // envelopes, KDFs, the migration -- is proven end-to-end in
+      // app/test/features/encryption/, which runs plain `test()` bodies.
+      encryptionServiceProvider.overrideWithValue(
+        encryption ?? FakeEncryptionService(),
+      ),
+      plaintextBackupCleanerProvider.overrideWithValue(
+        backupCleaner ?? FakePlaintextBackupCleaner(),
+      ),
     ],
   );
   addTearDown(() async {
@@ -329,5 +348,197 @@ class FakeHttpClient extends http.BaseClient {
       response.statusCode,
       headers: response.headers,
     );
+  }
+}
+
+/// Stands in for [EncryptionService] in widget tests: the same method
+/// contract, the same fail-closed answers, but envelopes held in a map
+/// instead of on disk. Real file I/O from a `testWidgets` body hangs in this
+/// environment (same reason [FakeBackupService] exists), and the crypto
+/// itself is already proven against real files by
+/// `app/test/features/encryption/encryption_service_test.dart` and
+/// `encryption_migration_test.dart`. What a widget test needs from here is
+/// which method the UI called, with which arguments, and what it did with
+/// the answer — so every call is recorded.
+class FakeEncryptionService extends EncryptionService {
+  FakeEncryptionService()
+    : super(paths: AppPaths(Directory('ledgerly-test-paths-unused')));
+
+  final _envelopes = <String, _FakeEnvelope>{};
+
+  /// Every `(firmId, masterKey)` pair [retirePreEncryptionCopy] was called
+  /// with — the Task 6 obligation this task had to wire into firm-open.
+  final retiredCopies = <({String firmId, Uint8List masterKey})>[];
+
+  /// Every firm id [recoverInterruptedMigration] was asked about.
+  final recoveryChecks = <String>[];
+
+  /// Every firm id migrated from plaintext through [migrateToEncrypted].
+  final migrations = <String>[];
+
+  /// Set to make [retirePreEncryptionCopy] fail the way the real one does
+  /// when the live database will not verify under the key it was handed.
+  Object? retireFailure;
+
+  /// What [recoverInterruptedMigration] should report. Set this to
+  /// [RecoveryOutcome.indeterminate] to exercise the unverifiable state.
+  RecoveryOutcome recoveryOutcome = RecoveryOutcome.nothingToRecover;
+
+  var _counter = 0;
+  Uint8List _bytes(int length) => Uint8List.fromList(
+    List.generate(length, (i) => (++_counter * 31 + i) % 256),
+  );
+
+  /// Puts a firm into the encrypted state without going through the UI, for
+  /// tests about unlocking rather than about setup.
+  String encryptNow(String firmId, {required String passphrase}) {
+    final code = encodeRecoveryCode(_bytes(32));
+    _envelopes[firmId] = _FakeEnvelope(
+      passphrase: passphrase,
+      recoveryCode: code,
+      masterKey: _bytes(32),
+    );
+    return code;
+  }
+
+  Uint8List masterKeyOf(String firmId) => _envelopes[firmId]!.masterKey;
+
+  @override
+  Future<bool> isEncrypted(String firmId) async =>
+      _envelopes.containsKey(firmId);
+
+  @override
+  Future<void> enableEncryption(
+    String firmId, {
+    required String passphrase,
+    required void Function(String recoveryCode) onRecoveryCodeGenerated,
+  }) async =>
+      onRecoveryCodeGenerated(encryptNow(firmId, passphrase: passphrase));
+
+  @override
+  Future<void> migrateToEncrypted(
+    String firmId, {
+    required String passphrase,
+    required void Function(String recoveryCode) onRecoveryCodeGenerated,
+  }) async {
+    if (_envelopes.containsKey(firmId)) {
+      throw StateError('Firm $firmId is already encrypted');
+    }
+    migrations.add(firmId);
+    onRecoveryCodeGenerated(encryptNow(firmId, passphrase: passphrase));
+  }
+
+  @override
+  Future<Uint8List?> unlockWithPassphrase(
+    String firmId,
+    String passphrase,
+  ) async {
+    final envelope = _envelopes[firmId];
+    if (envelope == null || envelope.passphrase != passphrase) return null;
+    return envelope.masterKey;
+  }
+
+  @override
+  Future<Uint8List?> unlockWithRecoveryCode(
+    String firmId,
+    String recoveryCode,
+  ) async {
+    final envelope = _envelopes[firmId];
+    // Deliberately an exact string comparison, mirroring the real service:
+    // the KDF there hashes the code as typed, so a code entered in a
+    // different case or spacing derives a different wrapping key and fails.
+    // A UI that does not canonicalise first fails here exactly as it would
+    // against the real thing.
+    if (envelope == null || envelope.recoveryCode != recoveryCode) return null;
+    return envelope.masterKey;
+  }
+
+  @override
+  Future<void> changePassphrase(
+    String firmId, {
+    required Uint8List masterKey,
+    required String newPassphrase,
+  }) async {
+    final envelope = _envelopes[firmId];
+    if (envelope == null) throw StateError('No envelope for firm $firmId');
+    if (!_sameKey(envelope.masterKey, masterKey)) {
+      throw StateError('changePassphrase called with the wrong master key');
+    }
+    _envelopes[firmId] = envelope.withPassphrase(newPassphrase);
+  }
+
+  @override
+  Future<String> rotateRecoveryCode(
+    String firmId, {
+    required Uint8List masterKey,
+  }) async {
+    final envelope = _envelopes[firmId];
+    if (envelope == null) throw StateError('No envelope for firm $firmId');
+    if (!_sameKey(envelope.masterKey, masterKey)) {
+      throw StateError('rotateRecoveryCode called with the wrong master key');
+    }
+    final code = encodeRecoveryCode(_bytes(32));
+    _envelopes[firmId] = envelope.withRecoveryCode(code);
+    return code;
+  }
+
+  @override
+  Future<RecoveryOutcome> recoverInterruptedMigration(String firmId) async {
+    recoveryChecks.add(firmId);
+    return recoveryOutcome;
+  }
+
+  @override
+  Future<void> retirePreEncryptionCopy(
+    String firmId,
+    Uint8List masterKey,
+  ) async {
+    retiredCopies.add((firmId: firmId, masterKey: masterKey));
+    if (retireFailure case final failure?) throw failure;
+  }
+
+  static bool _sameKey(Uint8List a, Uint8List b) =>
+      a.length == b.length && !a.indexed.any((e) => b[e.$1] != e.$2);
+}
+
+class _FakeEnvelope {
+  _FakeEnvelope({
+    required this.passphrase,
+    required this.recoveryCode,
+    required this.masterKey,
+  });
+  final String passphrase;
+  final String recoveryCode;
+  final Uint8List masterKey;
+
+  _FakeEnvelope withPassphrase(String next) => _FakeEnvelope(
+    passphrase: next,
+    recoveryCode: recoveryCode,
+    masterKey: masterKey,
+  );
+  _FakeEnvelope withRecoveryCode(String next) => _FakeEnvelope(
+    passphrase: passphrase,
+    recoveryCode: next,
+    masterKey: masterKey,
+  );
+}
+
+/// Lists and deletes nothing real — the plaintext backups a migration leaves
+/// behind, without a directory to scan or a file to unlink.
+class FakePlaintextBackupCleaner extends PlaintextBackupCleaner {
+  FakePlaintextBackupCleaner({List<String>? files})
+    : files = files ?? [],
+      super(directories: const []);
+
+  List<String> files;
+  var deleteCalls = 0;
+
+  @override
+  List<File> find(String firmId) => files.map(File.new).toList();
+
+  @override
+  Future<void> delete(List<File> backups) async {
+    deleteCalls++;
+    files = [];
   }
 }

@@ -14,6 +14,7 @@ import '../../shell/breakpoints.dart';
 import '../../sync/backend_client.dart';
 import '../../theme/ledgerly_theme.dart';
 import '../dashboard/dashboard_screen.dart';
+import '../encryption/encryption_setup_screen.dart';
 import 'cloud_sync_providers.dart';
 import 'settings_providers.dart';
 
@@ -194,6 +195,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  Future<void> _changePassphrase() async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => const ChangePassphraseDialog(),
+    );
+  }
+
+  Future<void> _rotateRecoveryCode() async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => const RotateRecoveryCodeDialog(),
+    );
+  }
+
   Future<void> _saveBackendUrl() async {
     final url = _backendUrl.text.trim();
     await ref.read(globalPrefsProvider).setBackendUrl(url.isEmpty ? null : url);
@@ -242,6 +257,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final backup = ref.watch(backupRunnerProvider);
     final printer = ref.watch(printerChoiceProvider);
     final cloudSession = ref.watch(cloudSessionProvider);
+    final encrypted = ref.watch(firmEncryptedProvider).value ?? false;
     final syncStatus = ref.watch(syncRunnerProvider);
     if (firm != null) _fill(firm, folder);
 
@@ -556,6 +572,59 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         compact: compact,
                       ),
                     ],
+                  ]),
+                  _section(context, 'Encryption', [
+                    _field(
+                      'This firm',
+                      Text(
+                        encrypted
+                            ? 'Encrypted — unlocked for this session'
+                            : 'Not encrypted',
+                        key: const Key('encryption.state'),
+                        style: TextStyle(color: c.ink2),
+                      ),
+                      compact: compact,
+                    ),
+                    if (!encrypted)
+                      _field(
+                        'Passphrase',
+                        OutlinedButton(
+                          key: const Key('encryption.enableSection'),
+                          onPressed: () => context.go('/encryption/setup'),
+                          child: const Text('Enable encryption…'),
+                        ),
+                        compact: compact,
+                      )
+                    else
+                      _field(
+                        'Secrets',
+                        // Wrap, not Row: three buttons overflow a phone-width
+                        // viewport, same reasoning as the cloud-sync pair.
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 8,
+                          children: [
+                            OutlinedButton(
+                              key: const Key('encryption.changePassphrase'),
+                              onPressed: _changePassphrase,
+                              child: const Text('Change passphrase…'),
+                            ),
+                            OutlinedButton(
+                              key: const Key('encryption.rotateRecoveryCode'),
+                              onPressed: _rotateRecoveryCode,
+                              child: const Text(
+                                'Generate a new recovery code…',
+                              ),
+                            ),
+                            OutlinedButton(
+                              key: const Key('encryption.lock'),
+                              onPressed: () => lockFirm(ref),
+                              child: const Text('Lock now'),
+                            ),
+                          ],
+                        ),
+                        compact: compact,
+                      ),
                   ]),
                   _section(context, 'Backup', [
                     _field(

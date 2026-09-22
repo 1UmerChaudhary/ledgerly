@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:ledgerly_core/ledgerly_core.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 
+import '../features/encryption/encryption_service.dart';
 import 'app_paths.dart';
 import 'global_prefs.dart';
 
@@ -70,8 +71,118 @@ class OpenFirm {
   late final bills = BillsRepository(db, ctx);
 }
 
-/// Null means no firm exists on this device yet → first-launch setup.
+final encryptionServiceProvider = Provider<EncryptionService>(
+  (ref) => EncryptionService(paths: ref.watch(appPathsProvider)),
+);
+
+/// Whether this device's firm can be opened right now, and if not, why not.
+/// Everything that decides where the app starts reads this — the router, and
+/// [openFirmProvider] itself, which must not so much as open a connection to
+/// an encrypted file with no key in hand.
+enum FirmGate {
+  /// No firm on this device yet: first launch.
+  noFirm,
+
+  /// Encrypted, and this session has no master key: the unlock screen.
+  locked,
+
+  /// A migration was interrupted and its database could not be classified as
+  /// either plaintext or ciphertext. Opening it would surface as an opaque
+  /// SQLite failure minutes later; say so plainly instead.
+  unverifiable,
+
+  /// Plaintext, or encrypted and already unlocked.
+  ready,
+}
+
+/// [FirmGate] plus, when the answer is [FirmGate.unverifiable], what actually
+/// went wrong — so the screen that reports it can say more than "something".
+class FirmGateStatus {
+  const FirmGateStatus(this.gate, {this.failure});
+  final FirmGate gate;
+  final Object? failure;
+}
+
+/// Answering [FirmGate] is also the one place every firm-open passes through,
+/// whatever route it came by — a fresh unlock, a relaunch, a passphrase
+/// change, a migration — which is what makes it the right home for the two
+/// repairs Task 6 could not perform for itself:
+///
+/// * [EncryptionService.recoverInterruptedMigration] runs on every open, not
+///   only inside a migration that is already under way. A firm that crashed
+///   mid-migration and is never migrated again would otherwise stay stranded.
+/// * [EncryptionService.retirePreEncryptionCopy] runs on every open that has
+///   a key, not just the one right after a migration. A crash between the
+///   database swap and the envelope promotion leaves a complete PLAINTEXT
+///   copy of the ledger on disk, and keyless recovery deliberately cannot
+///   remove it; this is the first (and every subsequent) moment the app holds
+///   the key that can. It no-ops when there is nothing to retire.
+///
+/// Every failure in here is caught and returned as
+/// [FirmGate.unverifiable] rather than left to fail the provider: this is the
+/// one thing the router reads before it can route anywhere at all, and an
+/// error state there surfaces as an unexplained exception from inside
+/// go_router's redirect instead of a screen that says what is wrong. Catching
+/// it also makes the choice explicit — a firm whose plaintext copy cannot be
+/// retired is NOT opened. It holds a complete, unprotected copy of the ledger
+/// beside a database the app just failed to verify; opening it anyway would
+/// leave both of those in place and say nothing.
+final firmGateProvider = FutureProvider<FirmGateStatus>((ref) async {
+  final firmId = ref.watch(globalPrefsProvider).lastFirmId;
+  if (firmId == null) return const FirmGateStatus(FirmGate.noFirm);
+  final encryption = ref.watch(encryptionServiceProvider);
+  final masterKey = ref.watch(firmMasterKeyProvider);
+  try {
+    if (await encryption.recoverInterruptedMigration(firmId) ==
+        RecoveryOutcome.indeterminate) {
+      return const FirmGateStatus(FirmGate.unverifiable);
+    }
+    if (masterKey == null) {
+      return await encryption.isEncrypted(firmId)
+          ? const FirmGateStatus(FirmGate.locked)
+          : const FirmGateStatus(FirmGate.ready);
+    }
+    await encryption.retirePreEncryptionCopy(firmId, masterKey);
+  } on Object catch (e) {
+    return FirmGateStatus(FirmGate.unverifiable, failure: e);
+  }
+  return const FirmGateStatus(FirmGate.ready);
+});
+
+/// Whether the open firm is encrypted, for the Settings section that offers
+/// to turn it on or to change either secret. Recomputed whenever the gate is
+/// — which covers enabling it, unlocking, and locking again.
+final firmEncryptedProvider = FutureProvider<bool>((ref) async {
+  final firmId = ref.watch(globalPrefsProvider).lastFirmId;
+  if (firmId == null) return false;
+  await ref.watch(firmGateProvider.future);
+  return ref.watch(encryptionServiceProvider).isEncrypted(firmId);
+});
+
+/// Set after a recovery-code unlock: the forgotten passphrase is presumed
+/// compromised, so a replacement is required before the rest of the app is
+/// reachable. The router enforces it; only the new-passphrase screen clears
+/// it.
+final passphraseResetRequiredProvider = StateProvider<bool>((ref) => false);
+
+/// Ends the unlocked session: the key is zeroed in place before it is
+/// dropped, so a copy someone else still holds a reference to is no longer a
+/// usable key either, and the firm falls back through [FirmGate.locked] to
+/// the unlock screen.
+void lockFirm(WidgetRef ref) {
+  final key = ref.read(firmMasterKeyProvider);
+  if (key != null) key.fillRange(0, key.length, 0);
+  ref.read(firmMasterKeyProvider.notifier).state = null;
+}
+
+/// Null means no firm exists on this device yet → first-launch setup, or a
+/// firm that must not be opened yet (locked, or unverifiable). The router
+/// reads [firmGateProvider] first and so tells those three apart; nothing
+/// else needs to.
 final openFirmProvider = FutureProvider<OpenFirm?>((ref) async {
+  if ((await ref.watch(firmGateProvider.future)).gate != FirmGate.ready) {
+    return null;
+  }
   final prefs = ref.watch(globalPrefsProvider);
   final firmId = prefs.lastFirmId;
   if (firmId == null) return null;
@@ -135,22 +246,30 @@ class FirmCreator {
     required String name,
     required String contactNumber,
     String? address,
+    String? firmId,
   }) => createFirstFirm(
     _ref,
     name: name,
     contactNumber: contactNumber,
     address: address,
+    firmId: firmId,
   );
 }
 
+/// [firmId] is normally minted here. The first-launch encryption path is the
+/// exception: it has to write the firm's key envelope and put the master key
+/// in this session BEFORE the database file is created, so that the very
+/// first byte written to it is already ciphertext. That means knowing the id
+/// first, so it passes the one it enrolled.
 Future<void> createFirstFirm(
   Ref ref, {
   required String name,
   required String contactNumber,
   String? address,
+  String? firmId,
 }) async {
   final prefs = ref.read(globalPrefsProvider);
-  final firmId = newId();
+  firmId ??= newId();
   final db = await ref.read(databaseOpenerProvider)(firmId);
   final ctx = DeviceContext(
     firmId: firmId,
@@ -164,5 +283,9 @@ Future<void> createFirstFirm(
     ctx,
   ).createFirm(name: name, contactNumber: contactNumber, address: address);
   await prefs.setLastFirmId(firmId);
+  // lastFirmId is plain mutable state, not a provider, so nothing recomputes
+  // off it by itself. The gate is upstream of openFirmProvider, so it goes
+  // first.
+  ref.invalidate(firmGateProvider);
   ref.invalidate(openFirmProvider);
 }

@@ -87,3 +87,20 @@ Uint8List? decodeRecoveryCode(String input) {
   }
   return Uint8List.fromList(bytes);
 }
+
+/// The code exactly as [encodeRecoveryCode] printed it, given anything a user
+/// might reasonably have typed off the sheet -- lower case, spaces instead of
+/// dashes, no separators at all, `O` for `0`, `I`/`L` for `1`. Returns null
+/// for input that is not a valid recovery code at all.
+///
+/// This exists because unlocking hashes the code STRING, not the bytes it
+/// decodes to: the KDF that unwraps the master key is fed the code as typed,
+/// so `xm4k-...` and `XM4K-...` derive two different wrapping keys even though
+/// both decode to the same secret. Every UI that accepts a typed recovery code
+/// must put it through here first -- without it a user holding the correct
+/// printed sheet is told their correct code is wrong.
+String? canonicaliseRecoveryCode(String input) {
+  final secretBytes = decodeRecoveryCode(input);
+  if (secretBytes == null) return null;
+  return encodeRecoveryCode(secretBytes);
+}
