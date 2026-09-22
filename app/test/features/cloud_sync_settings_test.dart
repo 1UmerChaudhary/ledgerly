@@ -13,6 +13,15 @@ Future<void> seed(AppDatabase db, DeviceContext ctx) async {
   await FirmSetup(db, ctx).createFirm(name: 'Mill', contactNumber: '0300');
 }
 
+/// Same firm as [seed], plus one item queued in the outbox — pushPending()
+/// makes no HTTP call at all when the outbox is empty (see
+/// SyncService.pushPending), so a test about a 401 *during* /sync/push
+/// needs a real pending row or the push request is never sent.
+Future<void> seedWithPendingSync(AppDatabase db, DeviceContext ctx) async {
+  await FirmSetup(db, ctx).createFirm(name: 'Mill', contactNumber: '0300');
+  await ItemsRepository(db, ctx).create(name: 'Flour');
+}
+
 Future<void> _type(WidgetTester tester, Key key, String text) async {
   await tester.ensureVisible(find.byKey(key));
   await tester.pumpAndSettle();
@@ -128,6 +137,235 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Pushed 0, pulled 0'), findsOneWidget);
+  }, variant: windowsOnly);
+
+  testWidgets(
+    'a 401 during sync refreshes the token and retries once, succeeding',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: seedWithPendingSync,
+      );
+      final fakeHttp = container.read(httpClientProvider) as FakeHttpClient;
+      var pushCalls = 0;
+      fakeHttp.handler = (request) async {
+        if (request.url.path == '/auth/register') {
+          return http.Response(
+            jsonEncode({
+              'access_token': 'a',
+              'refresh_token': 'r',
+              'token_type': 'bearer',
+              'user': {
+                'id': 'u1',
+                'name': 'Owner',
+                'email': 'owner@example.com',
+              },
+              'firm': {'id': 'f1', 'name': 'Mill'},
+            }),
+            201,
+          );
+        }
+        if (request.url.path == '/sync/push') {
+          pushCalls++;
+          if (pushCalls == 1) {
+            return http.Response(
+              jsonEncode({'detail': 'Invalid or expired token'}),
+              401,
+            );
+          }
+          return http.Response(
+            jsonEncode({
+              'accepted': [],
+              'rejected': [],
+              'rewrites': [],
+              'server_time': 1000,
+            }),
+            200,
+          );
+        }
+        if (request.url.path == '/auth/refresh') {
+          return http.Response(
+            jsonEncode({'access_token': 'new-a', 'refresh_token': 'new-r'}),
+            200,
+          );
+        }
+        return http.Response(
+          jsonEncode({'rows': [], 'next_cursor': 0, 'has_more': false}),
+          200,
+        );
+      };
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+      await _type(
+        tester,
+        const Key('settings.cloudEmail'),
+        'owner@example.com',
+      );
+      await _type(
+        tester,
+        const Key('settings.cloudPassword'),
+        'correct-password',
+      );
+      await tester.ensureVisible(
+        find.byKey(const Key('settings.cloudRegister')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings.cloudRegister')));
+      await tester.pumpAndSettle();
+
+      await container.read(syncRunnerProvider.notifier).syncNow();
+
+      expect(pushCalls, 2); // one 401, one successful retry
+      expect(container.read(syncRunnerProvider).error, isNull);
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
+    'two concurrent syncs against an expired token only refresh once',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: seedWithPendingSync,
+      );
+      final fakeHttp = container.read(httpClientProvider) as FakeHttpClient;
+      var pushCalls = 0;
+      var refreshCalls = 0;
+      fakeHttp.handler = (request) async {
+        if (request.url.path == '/auth/register') {
+          return http.Response(
+            jsonEncode({
+              'access_token': 'a',
+              'refresh_token': 'r',
+              'token_type': 'bearer',
+              'user': {
+                'id': 'u1',
+                'name': 'Owner',
+                'email': 'owner@example.com',
+              },
+              'firm': {'id': 'f1', 'name': 'Mill'},
+            }),
+            201,
+          );
+        }
+        if (request.url.path == '/sync/push') {
+          pushCalls++;
+          // Both concurrent syncNow() calls send their first push before
+          // either has a chance to retry, so the first two /sync/push
+          // calls are the ones that see the expired token; anything past
+          // that is a post-refresh retry and should succeed.
+          if (pushCalls <= 2) {
+            return http.Response(
+              jsonEncode({'detail': 'Invalid or expired token'}),
+              401,
+            );
+          }
+          return http.Response(
+            jsonEncode({
+              'accepted': [],
+              'rejected': [],
+              'rewrites': [],
+              'server_time': 1000,
+            }),
+            200,
+          );
+        }
+        if (request.url.path == '/auth/refresh') {
+          refreshCalls++;
+          return http.Response(
+            jsonEncode({'access_token': 'new-a', 'refresh_token': 'new-r'}),
+            200,
+          );
+        }
+        return http.Response(
+          jsonEncode({'rows': [], 'next_cursor': 0, 'has_more': false}),
+          200,
+        );
+      };
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+      await _type(
+        tester,
+        const Key('settings.cloudEmail'),
+        'owner@example.com',
+      );
+      await _type(
+        tester,
+        const Key('settings.cloudPassword'),
+        'correct-password',
+      );
+      await tester.ensureVisible(
+        find.byKey(const Key('settings.cloudRegister')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings.cloudRegister')));
+      await tester.pumpAndSettle();
+
+      // Fire both without awaiting the first, so they race against the
+      // same expired token.
+      final first = container.read(syncRunnerProvider.notifier).syncNow();
+      final second = container.read(syncRunnerProvider.notifier).syncNow();
+      await Future.wait([first, second]);
+
+      expect(refreshCalls, 1);
+      expect(container.read(cloudSessionProvider), isNotNull);
+      expect(container.read(syncRunnerProvider).error, isNull);
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets('a refresh that itself 401s still logs the user out', (
+    tester,
+  ) async {
+    final container = await pumpLedgerly(
+      tester,
+      seed: seedWithPendingSync,
+    );
+    final fakeHttp = container.read(httpClientProvider) as FakeHttpClient;
+    fakeHttp.handler = (request) async {
+      if (request.url.path == '/auth/register') {
+        return http.Response(
+          jsonEncode({
+            'access_token': 'a',
+            'refresh_token': 'r',
+            'token_type': 'bearer',
+            'user': {'id': 'u1', 'name': 'Owner', 'email': 'owner@example.com'},
+            'firm': {'id': 'f1', 'name': 'Mill'},
+          }),
+          201,
+        );
+      }
+      if (request.url.path == '/sync/push') {
+        return http.Response(
+          jsonEncode({'detail': 'Invalid or expired token'}),
+          401,
+        );
+      }
+      if (request.url.path == '/auth/refresh') {
+        return http.Response(
+          jsonEncode({'detail': 'Invalid or expired token'}),
+          401,
+        );
+      }
+      return http.Response(
+        jsonEncode({'rows': [], 'next_cursor': 0, 'has_more': false}),
+        200,
+      );
+    };
+    await pressCtrl(tester, LogicalKeyboardKey.comma);
+    await _type(tester, const Key('settings.cloudEmail'), 'owner@example.com');
+    await _type(
+      tester,
+      const Key('settings.cloudPassword'),
+      'correct-password',
+    );
+    await tester.ensureVisible(find.byKey(const Key('settings.cloudRegister')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('settings.cloudRegister')));
+    await tester.pumpAndSettle();
+
+    await container.read(syncRunnerProvider.notifier).syncNow();
+
+    expect(container.read(cloudSessionProvider), isNull);
+    expect(container.read(syncRunnerProvider).error, isNotNull);
   }, variant: windowsOnly);
 
   testWidgets('Sign in with Google is only shown on Android', (tester) async {
