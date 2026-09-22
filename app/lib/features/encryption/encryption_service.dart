@@ -402,13 +402,19 @@ class EncryptionService {
         pendingEnvelope.deleteSync();
       } else if (isPlaintext == true) {
         // The swap never happened, so the staged key wraps a database that is
-        // not there. The live file is PROVED plaintext, which also makes
-        // `.pre-encryption` a redundant duplicate of it rather than a safety
-        // net -- retire it here rather than leave it for a retry that may
-        // never come.
+        // not there.
         pendingEnvelope.deleteSync();
+        // `.pre-encryption` is only a redundant duplicate if the live file is
+        // genuinely this firm's ledger, sound and complete. The header check
+        // that got us here proves only "not ciphertext" -- it cannot tell a
+        // good database from a truncated, half-written or unrelated one, and
+        // this copy is the only other one there is. Being plaintext, it can
+        // be read in full for nothing, with no key: do that instead of
+        // deleting on the strength of 16 bytes.
         final keptPlaintext = _preEncryptionFile(firmId);
-        if (keptPlaintext.existsSync()) keptPlaintext.deleteSync();
+        if (keptPlaintext.existsSync() && _plaintextLiveFileIsSound(firmId)) {
+          keptPlaintext.deleteSync();
+        }
         outcome = RecoveryOutcome.revertedToPlaintext;
       } else if (isPlaintext == false) {
         // The swap happened: this staged envelope holds the only wrapped copy
@@ -432,6 +438,33 @@ class EncryptionService {
       if (leftover.existsSync()) leftover.deleteSync();
     }
     return outcome;
+  }
+
+  /// The keyless counterpart to [_verifyLiveDatabase], for the one branch
+  /// where the live file has already been proved plaintext: does it actually
+  /// hold this firm's ledger, intact? Answers false rather than throwing —
+  /// its only caller is deciding whether it is safe to delete the last other
+  /// copy, and every reason the answer is not a clear yes is a reason to keep
+  /// that copy.
+  bool _plaintextLiveFileIsSound(String firmId) {
+    try {
+      final db = raw.sqlite3.open(
+        paths.firmDatabase(firmId).path,
+        mode: raw.OpenMode.readOnly,
+      );
+      try {
+        if (db.select('PRAGMA quick_check').first.values.first != 'ok') {
+          return false;
+        }
+        return db.select('SELECT 1 FROM firms WHERE id = ?', [
+          firmId,
+        ]).isNotEmpty;
+      } finally {
+        db.close();
+      }
+    } on Object {
+      return false;
+    }
   }
 
   File _pendingEnvelopeFile(String firmId) =>

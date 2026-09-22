@@ -129,10 +129,19 @@ class FirmGateStatus {
 /// one thing the router reads before it can route anywhere at all, and an
 /// error state there surfaces as an unexplained exception from inside
 /// go_router's redirect instead of a screen that says what is wrong. Catching
-/// it also makes the choice explicit — a firm whose plaintext copy cannot be
-/// retired is NOT opened. It holds a complete, unprotected copy of the ledger
-/// beside a database the app just failed to verify; opening it anyway would
-/// leave both of those in place and say nothing.
+/// it also makes the choice explicit, and the choice is not the same for the
+/// two ways retiring a plaintext copy can fail:
+///
+/// * The live database would not VERIFY under this key — the firm is not
+///   opened. Something is wrong with the database itself, and a complete
+///   unprotected copy of the ledger is sitting beside it; opening anyway
+///   would leave both of those in place and say nothing.
+/// * The database verified and only the DELETE failed
+///   ([PlaintextCopyNotRetired]) — an antivirus holding the file, a read-only
+///   volume, a full disk. The firm opens, with a warning in Settings naming
+///   the file still on disk. Refusing here would brick a ledger that is
+///   provably sound for a reason that has nothing to do with it, and the next
+///   open retries the delete anyway.
 final firmGateProvider = FutureProvider<FirmGateStatus>((ref) async {
   final firmId = ref.watch(globalPrefsProvider).lastFirmId;
   if (firmId == null) return const FirmGateStatus(FirmGate.noFirm);

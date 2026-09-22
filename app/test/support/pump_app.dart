@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -529,11 +530,19 @@ class FakeEncryptionService extends EncryptionService {
     onRecoveryCodeGenerated(encryptNow(firmId, passphrase: passphrase));
   }
 
+  /// How many times a passphrase unlock has been STARTED, and a latch to
+  /// hold one open. Together they let a test send a second keystroke while
+  /// the first (in production, an Argon2id derivation) is still running.
+  var unlockCalls = 0;
+  Completer<void>? holdUnlock;
+
   @override
   Future<Uint8List?> unlockWithPassphrase(
     String firmId,
     String passphrase,
   ) async {
+    unlockCalls++;
+    if (holdUnlock case final latch?) await latch.future;
     final envelope = _envelopes[firmId];
     if (envelope == null || envelope.passphrase != passphrase) return null;
     // A COPY, because the real unwrapKey returns freshly allocated bytes

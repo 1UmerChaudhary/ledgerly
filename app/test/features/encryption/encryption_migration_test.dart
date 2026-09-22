@@ -19,6 +19,22 @@ import 'package:test/test.dart';
 /// AppPaths, which imports path_provider, which pulls in dart:ui. It is a
 /// plain `test()` and never a `testWidgets()`, so its real file I/O never goes
 /// near the widget tester that would wedge on it.
+/// Why a chmod-based "this delete will fail" setup cannot be trusted here, or
+/// null when it can. Windows does not gate unlink on directory permissions at
+/// all; root ignores them, so under the root user common in Docker CI the
+/// delete SUCCEEDS and the test fails rather than skipping -- a red build that
+/// says nothing about the code.
+String? get _cannotBlockUnlink {
+  if (Platform.isWindows) return 'chmod does not gate unlink on Windows';
+  // No dart:io uid getter, so ask the OS. A non-zero exit (no `id` on PATH)
+  // is itself a reason not to rely on the setup.
+  final id = Process.runSync('id', ['-u']);
+  if (id.exitCode != 0) return 'could not determine the user id';
+  return (id.stdout as String).trim() == '0'
+      ? 'root ignores directory permissions, so the delete would succeed'
+      : null;
+}
+
 void main() {
   late Directory tmp;
   late AppPaths paths;
@@ -295,6 +311,45 @@ void main() {
     expect(live().readAsBytesSync(), plaintextBytes);
   });
 
+  test('the plaintext safety copy survives a revert when the live file is '
+      'plaintext but not this firm', () async {
+    // The header check that drives this branch proves one thing only: the
+    // live file is not ciphertext. It cannot tell the RIGHT plaintext
+    // database from a truncated, half-written or unrelated one -- and the
+    // copy about to be deleted is the only other copy of the ledger. The
+    // live file is plaintext here by that same proof, so the stronger read
+    // costs nothing: no key is needed for it.
+    await seedPlaintextFirm();
+    final goodBytes = live().readAsBytesSync();
+    keptPlaintext().writeAsBytesSync(goodBytes);
+    pendingEnvelope().writeAsStringSync('{}');
+    // A valid, readable SQLite database with a perfect header -- of some
+    // other firm entirely.
+    final stranger = AppDatabase(NativeDatabase(live()..deleteSync()));
+    await FirmSetup(
+      stranger,
+      DeviceContext(
+        firmId: '99999999-9999-4999-8999-999999999999',
+        deviceId: '22222222-2222-4222-8222-222222222222',
+        deviceShortCode: 'ZZ99',
+        userId: '33333333-3333-4333-8333-333333333333',
+        hlc: Hlc(clock: () => 1000),
+      ),
+    ).createFirm(name: 'Someone Else', contactNumber: '0300');
+    await stranger.close();
+
+    await service.recoverInterruptedMigration(firmId);
+
+    expect(
+      keptPlaintext().existsSync(),
+      isTrue,
+      reason:
+          'the only remaining copy of this firm must not be deleted on '
+          'the strength of a 16-byte header',
+    );
+    expect(keptPlaintext().readAsBytesSync(), goodBytes);
+  });
+
   test('a database that cannot be exported leaves the live file untouched and '
       'the firm unencrypted', () async {
     final garbage = Uint8List.fromList(List.generate(4096, (i) => i % 256));
@@ -470,7 +525,7 @@ void main() {
     } finally {
       Process.runSync('chmod', ['755', paths.firms.path]);
     }
-  }, skip: Platform.isWindows ? 'chmod does not gate unlink on Windows' : null);
+  }, skip: _cannotBlockUnlink);
 
   test('a migration whose own plaintext copy vanishes fails loudly rather '
       'than passing as a success', () async {

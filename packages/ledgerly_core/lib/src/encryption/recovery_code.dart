@@ -7,18 +7,21 @@ const _alphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 // Crockford's spec, giving a mod-37 check digit.
 const _checkAlphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ*~\$=U';
 
-int _valueOf(String char) {
+/// Crockford's look-alike folding, applied before any lookup: a handwritten
+/// `O` means `0`, and `I` or `L` means `1`. The whole reason for this alphabet
+/// is that a character copied off a sheet by hand cannot be misread as
+/// another, so the folding has to reach every position that gets copied --
+/// the check symbol included.
+String _fold(String char) {
   final upper = char.toUpperCase();
-  switch (upper) {
-    case 'O':
-      return _alphabet.indexOf('0');
-    case 'I':
-    case 'L':
-      return _alphabet.indexOf('1');
-    default:
-      return _alphabet.indexOf(upper);
-  }
+  return switch (upper) {
+    'O' => '0',
+    'I' || 'L' => '1',
+    _ => upper,
+  };
 }
+
+int _valueOf(String char) => _alphabet.indexOf(_fold(char));
 
 /// Encodes [secretBytes] as a human-typeable Crockford base32 string, grouped
 /// in 4-character blocks with a trailing check symbol, e.g. "XM4K-9QRT-...-7".
@@ -50,7 +53,9 @@ String encodeRecoveryCode(Uint8List secretBytes) {
   final joined = chars.join();
   final grouped = <String>[];
   for (var i = 0; i < joined.length; i += 4) {
-    grouped.add(joined.substring(i, i + 4 > joined.length ? joined.length : i + 4));
+    grouped.add(
+      joined.substring(i, i + 4 > joined.length ? joined.length : i + 4),
+    );
   }
   return grouped.join('-');
 }
@@ -71,7 +76,11 @@ Uint8List? decodeRecoveryCode(String input) {
     if (v == -1) return null;
     checkValue = (checkValue * 32 + v) % 37;
   }
-  if (_checkAlphabet.indexOf(checkChar) != checkValue) return null;
+  // Folded like every other position. Without this the check symbol is the
+  // one character a user can copy the way Crockford's alphabet expects and
+  // still be told their correct code is invalid -- and it is the character
+  // most often written down alone, after the last dash.
+  if (_checkAlphabet.indexOf(_fold(checkChar)) != checkValue) return null;
 
   var buffer = 0;
   var bitsInBuffer = 0;

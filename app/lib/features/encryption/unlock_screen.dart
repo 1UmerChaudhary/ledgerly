@@ -37,6 +37,10 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
   String get _firmId => ref.read(globalPrefsProvider).lastFirmId!;
 
   Future<void> _unlock() async {
+    // The submit button is disabled while busy; the Enter shortcut and
+    // onSubmitted are not, so without this a held or repeated Enter key
+    // starts a second Argon2id derivation over the top of the first.
+    if (_busy) return;
     setState(() {
       _busy = true;
       _error = null;
@@ -58,6 +62,7 @@ class _UnlockScreenState extends ConsumerState<UnlockScreen> {
   }
 
   Future<void> _unlockWithRecoveryCode() async {
+    if (_busy) return; // as in [_unlock]: onSubmitted has no disabled state
     setState(() {
       _busy = true;
       _error = null;

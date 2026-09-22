@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -275,6 +277,36 @@ void main() {
       expect(container.read(firmMasterKeyProvider), isNotNull);
       expect(find.byKey(const Key('dashboard.search')), findsOneWidget);
     },
+  );
+
+  testWidgets(
+    'holding Enter on the unlock screen starts one derivation, not one per '
+    'repeat',
+    (tester) async {
+      // The Unlock button is disabled while busy; the Enter shortcut and the
+      // field's onSubmitted were not. Each of those starts a real Argon2id
+      // derivation -- deliberately expensive, ~200-500ms and 19 MiB -- so a
+      // held key queued them up behind each other.
+      final encryption = FakeEncryptionService();
+      encryption.encryptNow(testFirmId, passphrase: 'open up');
+      await pumpLedgerly(tester, seed: seed, encryption: encryption);
+      encryption.holdUnlock = Completer<void>();
+
+      await type(tester, const Key('encryption.unlockPassphrase'), 'open up');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter, platform: 'windows');
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter, platform: 'windows');
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter, platform: 'windows');
+      await tester.pump();
+
+      expect(encryption.unlockCalls, 1);
+
+      encryption.holdUnlock!.complete();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('dashboard.search')), findsOneWidget);
+    },
+    variant: windowsOnly,
   );
 
   testWidgets(
