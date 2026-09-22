@@ -9,6 +9,16 @@ import 'package:sqlite3/sqlite3.dart' as raw;
 
 import '../../bootstrap/app_paths.dart';
 
+/// What [EncryptionService.recoverInterruptedMigration] found and did, so a
+/// caller can tell "nothing needed repairing" apart from "I found a firm I
+/// could not safely make a decision about".
+enum RecoveryOutcome {
+  nothingToRecover,
+  revertedToPlaintext,
+  promotedToEncrypted,
+  indeterminate,
+}
+
 /// The logic layer for passphrase encryption: generating/wrapping the master
 /// key, unlocking via either path, and changing either secret independently.
 /// UI screens call this, never Tasks 1-4's lower-level pieces directly.
@@ -202,6 +212,16 @@ class EncryptionService {
     // the file that is now live, not the scratch file verified before the
     // rename, back through the key. Same method the keyless crash-recovery
     // path has to leave for Task 7's unlock flow to call.
+    //
+    // That method no-ops when there is nothing to retire, which is right for
+    // its other caller and wrong here: this method wrote that copy itself, a
+    // few lines up. If it has gone, something is badly wrong and must not pass
+    // as a successful migration.
+    if (!_preEncryptionFile(firmId).existsSync()) {
+      throw StateError(
+        'The pre-encryption copy for firm $firmId disappeared mid-migration',
+      );
+    }
     await retirePreEncryptionCopy(firmId, masterKey);
 
     // Last, so that a caller whose callback throws cannot strand the plaintext
@@ -209,38 +229,115 @@ class EncryptionService {
     onRecoveryCodeGenerated(recoveryCode);
   }
 
-  /// Reads the database that is now live back through [masterKey], checks it
-  /// against the `.pre-encryption` plaintext copy kept beside it -- cipher
-  /// integrity, SQL integrity, schema, drift's schema version and a row count
-  /// per table -- and only then deletes that copy. A no-op when there is
-  /// nothing to retire, so it is safe to call on any firm at any time.
+  /// Retires the `.pre-encryption` plaintext safety copy, but only after
+  /// proving -- with [masterKey], through a real keyed read -- that the live
+  /// encrypted database stands up on its own. A no-op when there is nothing to
+  /// retire, so it is safe to call on any firm at any time.
+  ///
+  /// What it proves is deliberately a property of the live file ALONE, not a
+  /// comparison against the `.pre-encryption` snapshot: that the file decrypts
+  /// under this key, passes SQLite's own integrity check, holds this firm's
+  /// row, and still has every table the snapshot had. Row counts and schema
+  /// DDL are pointedly NOT compared. That comparison's job -- proving the
+  /// export was a faithful, complete copy -- was already done once, correctly,
+  /// by [_verifyEncryptedCopy] between the export and the swap. Repeating it
+  /// here would make this method un-callable the moment the firm is used
+  /// normally: one new transaction, or a drift migration bumping the schema,
+  /// and it would throw forever, stranding the plaintext copy permanently --
+  /// which is the very thing it exists to prevent. After the swap,
+  /// `.pre-encryption` is an unused safety net, not a reference copy.
   ///
   /// Public because [recoverInterruptedMigration] **cannot** do this. Recovery
   /// is keyless by construction -- the key it is promoting is inside the very
   /// envelope in question -- and a file-header check only ever proves "this
-  /// looks like ciphertext", never "this decrypts to the same data as the
-  /// original". Retiring the last plaintext copy of a firm's ledger on the
-  /// strength of the weaker claim is exactly the compromise the rest of this
-  /// file exists to avoid.
+  /// looks like ciphertext", never "this decrypts correctly". Retiring the
+  /// last plaintext copy of a firm's ledger on the strength of the weaker
+  /// claim is exactly the compromise the rest of this file exists to avoid.
   ///
   /// The consequence is a real, tracked follow-up: a firm whose migration
   /// crashed between the swap and the promotion, and was then auto-recovered,
   /// still has a complete plaintext copy of its ledger on disk. **Task 7's
   /// unlock/open flow MUST call `retirePreEncryptionCopy(firmId, masterKey)`
   /// after a successful unlock**, which is the first moment anything in the
-  /// app holds the key needed to finish the job.
+  /// app holds the key needed to finish the job -- and, per the paragraph
+  /// above, it stays callable however long after the migration that is.
   Future<void> retirePreEncryptionCopy(
     String firmId,
     Uint8List masterKey,
   ) async {
     final keptPlaintext = _preEncryptionFile(firmId);
     if (!keptPlaintext.existsSync()) return;
-    _verifyEncryptedCopy(
-      plaintext: keptPlaintext,
-      encrypted: paths.firmDatabase(firmId),
+    _verifyLiveDatabase(
+      firmId,
       keyHex: _hex(masterKey),
+      tablesExpectedFrom: keptPlaintext,
     );
     keptPlaintext.deleteSync();
+  }
+
+  /// Asks the one question that never goes stale with normal use: does this
+  /// firm's live database genuinely decrypt under this key, and is what comes
+  /// out sound and complete for this firm?
+  void _verifyLiveDatabase(
+    String firmId, {
+    required String keyHex,
+    required File tablesExpectedFrom,
+  }) {
+    final expectedTables = _tableNamesOf(tablesExpectedFrom);
+    final live = raw.sqlite3.open(
+      paths.firmDatabase(firmId).path,
+      mode: raw.OpenMode.readOnly,
+    );
+    try {
+      live.execute('PRAGMA key = "x\'$keyHex\'";');
+      // PRAGMA key accepts any key without complaint; only a real read shows
+      // whether it was the right one. Everything below is such a read.
+      final cipherErrors = live.select('PRAGMA cipher_integrity_check');
+      if (cipherErrors.isNotEmpty) {
+        throw StateError(
+          'The live database for firm $firmId failed its cipher integrity '
+          'check: ${cipherErrors.rows}',
+        );
+      }
+      final quickCheck = live.select('PRAGMA quick_check').first.values.first;
+      if (quickCheck != 'ok') {
+        throw StateError(
+          'The live database for firm $firmId failed quick_check: $quickCheck',
+        );
+      }
+      // Decrypting cleanly is not the same as being the right database.
+      final firm = live.select('SELECT 1 FROM firms WHERE id = ?', [firmId]);
+      if (firm.isEmpty) {
+        throw StateError('The live database holds no row for firm $firmId');
+      }
+      // Names only, and only as a floor: a later drift migration may
+      // legitimately ADD tables, but it will never make the firm's original
+      // ones vanish.
+      final liveTables = _userTables(live).toSet();
+      final missing = expectedTables
+          .where((table) => !liveTables.contains(table))
+          .toList();
+      if (missing.isNotEmpty) {
+        throw StateError(
+          'The live database for firm $firmId is missing tables the '
+          'pre-encryption copy had: $missing',
+        );
+      }
+    } finally {
+      live.close();
+    }
+  }
+
+  static List<String> _tableNamesOf(File plaintextFile) {
+    final db = raw.sqlite3.open(
+      plaintextFile.path,
+      mode: raw.OpenMode.readOnly,
+    );
+    try {
+      return _userTables(db);
+    } finally {
+      db.close();
+    }
   }
 
   /// Repairs a [migrateToEncrypted] that died between the database swap and
@@ -249,39 +346,55 @@ class EncryptionService {
   /// It cannot read the database to decide (the key is inside the very
   /// envelope in question), so it reads the file header instead: SQLCipher
   /// encrypts page 1 whole, including SQLite's magic string, so finding that
-  /// string is a reliable "this file is still plaintext". It deliberately does
-  /// NOT retire the `.pre-encryption` copy -- see [retirePreEncryptionCopy]
-  /// for why, and for whose job that is.
+  /// string is a reliable "this file is still plaintext". Where it promotes,
+  /// it deliberately does NOT retire the `.pre-encryption` copy -- see
+  /// [retirePreEncryptionCopy] for why, and for whose job that is.
+  ///
+  /// The returned [RecoveryOutcome] is what a caller reacts to: an
+  /// [RecoveryOutcome.indeterminate] firm is one whose database could not be
+  /// classified at all, and deserves a clear error state rather than an opaque
+  /// SQLite failure surfacing later with no explanation.
   ///
   /// [migrateToEncrypted] calls this itself before doing anything. Task 7's
   /// open/unlock flow should call it at firm-open time too, as defence in
   /// depth -- a firm that crashed mid-migration and is never migrated again
   /// would otherwise stay stranded.
-  Future<void> recoverInterruptedMigration(String firmId) async {
+  Future<RecoveryOutcome> recoverInterruptedMigration(String firmId) async {
     final pendingEnvelope = _pendingEnvelopeFile(firmId);
     final liveFile = paths.firmDatabase(firmId);
+    var outcome = RecoveryOutcome.nothingToRecover;
     if (pendingEnvelope.existsSync()) {
       final envelope = paths.firmKeyEnvelope(firmId);
       // No database at all means the swap certainly did not happen.
       final isPlaintext = liveFile.existsSync()
           ? _isPlaintextSqlite(liveFile)
           : true;
-      if (envelope.existsSync() || isPlaintext == true) {
-        // Either a real envelope already won, or the swap never happened and
-        // this staged key wraps a database that is not there. Drop it and
-        // leave the firm as the plaintext, unencrypted firm it still is.
+      if (envelope.existsSync()) {
+        // A real envelope already won; this staged copy is a leftover.
         pendingEnvelope.deleteSync();
+      } else if (isPlaintext == true) {
+        // The swap never happened, so the staged key wraps a database that is
+        // not there. The live file is PROVED plaintext, which also makes
+        // `.pre-encryption` a redundant duplicate of it rather than a safety
+        // net -- retire it here rather than leave it for a retry that may
+        // never come.
+        pendingEnvelope.deleteSync();
+        final keptPlaintext = _preEncryptionFile(firmId);
+        if (keptPlaintext.existsSync()) keptPlaintext.deleteSync();
+        outcome = RecoveryOutcome.revertedToPlaintext;
       } else if (isPlaintext == false) {
         // The swap happened: this staged envelope holds the only wrapped copy
         // of the key for the file now on disk. Finish what was interrupted.
         await pendingEnvelope.rename(envelope.path);
         _deleteJournalSidecars(liveFile);
+        outcome = RecoveryOutcome.promotedToEncrypted;
+      } else {
+        // The header could not be read, so neither case is proved. Promoting
+        // would mark the firm encrypted over a file nothing has vouched for;
+        // dropping would destroy the only wrapped copy of a key that might
+        // belong to it. Touch neither, and say so.
+        outcome = RecoveryOutcome.indeterminate;
       }
-      // isPlaintext == null: the header could not be read, so neither case is
-      // proved. Promoting would mark the firm encrypted over a file nothing
-      // has vouched for; dropping would destroy the only wrapped copy of a key
-      // that might belong to it. Touch neither, and let a retry -- which
-      // re-stages its own envelope -- or a human settle it.
     }
     for (final leftover in [
       File('${pendingEnvelope.path}.tmp'),
@@ -290,6 +403,7 @@ class EncryptionService {
       _deleteJournalSidecars(leftover);
       if (leftover.existsSync()) leftover.deleteSync();
     }
+    return outcome;
   }
 
   File _pendingEnvelopeFile(String firmId) =>

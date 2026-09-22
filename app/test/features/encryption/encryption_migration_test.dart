@@ -70,6 +70,30 @@ void main() {
       raw.sqlite3.open(file.path, mode: raw.OpenMode.readOnly)
         ..execute('PRAGMA key = "x\'${hexOf(key)}\'";');
 
+  /// Migrates, dying in the swap-to-promotion window, then recovers: the state
+  /// that strands a `.pre-encryption` copy for a keyed caller to retire later.
+  Future<Uint8List> crashMigrateThenRecover() async {
+    await seedPlaintextFirm();
+    service.afterDatabaseSwapHook = () async =>
+        throw const FormatException('simulated crash');
+    await expectLater(
+      service.migrateToEncrypted(
+        firmId,
+        passphrase: passphrase,
+        onRecoveryCodeGenerated: (_) {},
+      ),
+      throwsA(isA<FormatException>()),
+    );
+    service.afterDatabaseSwapHook = null;
+    expect(
+      await service.recoverInterruptedMigration(firmId),
+      RecoveryOutcome.promotedToEncrypted,
+    );
+    final key = await service.unlockWithPassphrase(firmId, passphrase);
+    expect(key, isNotNull);
+    return key!;
+  }
+
   test('migrating encrypts the live file in place, retires the plaintext '
       'copy, and the envelope unlocks what was written', () async {
     await seedPlaintextFirm();
@@ -159,7 +183,10 @@ void main() {
 
     // Recovery promotes the staged envelope and the firm comes up encrypted.
     service.afterDatabaseSwapHook = null;
-    await service.recoverInterruptedMigration(firmId);
+    expect(
+      await service.recoverInterruptedMigration(firmId),
+      RecoveryOutcome.promotedToEncrypted,
+    );
     expect(await service.isEncrypted(firmId), isTrue);
     expect(pendingEnvelope().existsSync(), isFalse);
     final key = await service.unlockWithPassphrase(firmId, passphrase);
@@ -192,7 +219,10 @@ void main() {
     // swap happened, so nothing may act on either assumption.
     live().writeAsBytesSync(Uint8List.fromList([1, 2, 3]));
 
-    await service.recoverInterruptedMigration(firmId);
+    expect(
+      await service.recoverInterruptedMigration(firmId),
+      RecoveryOutcome.indeterminate,
+    );
 
     expect(await service.isEncrypted(firmId), isFalse);
     expect(envelope().existsSync(), isFalse);
@@ -248,13 +278,20 @@ void main() {
     // The state a crash between staging the envelope and the swap leaves.
     pendingEnvelope().writeAsStringSync('{}');
     scratch().writeAsStringSync('leftover');
+    // The header check proves the live file is still plaintext, so this copy
+    // is a duplicate of it rather than a safety net.
+    keptPlaintext().writeAsBytesSync(plaintextBytes);
 
-    await service.recoverInterruptedMigration(firmId);
+    expect(
+      await service.recoverInterruptedMigration(firmId),
+      RecoveryOutcome.revertedToPlaintext,
+    );
 
     expect(await service.isEncrypted(firmId), isFalse);
     expect(envelope().existsSync(), isFalse);
     expect(pendingEnvelope().existsSync(), isFalse);
     expect(scratch().existsSync(), isFalse);
+    expect(keptPlaintext().existsSync(), isFalse);
     expect(live().readAsBytesSync(), plaintextBytes);
   });
 
@@ -338,5 +375,98 @@ void main() {
       ),
     );
     expect(live().existsSync(), isFalse);
+  });
+
+  test('retiring the plaintext copy still works long after the firm has moved '
+      'on from it', () async {
+    final key = await crashMigrateThenRecover();
+    expect(keptPlaintext().existsSync(), isTrue);
+
+    // Real use after the migration: a new customer, and a schema version bump
+    // of the kind a later drift migration would make. Both make the live file
+    // diverge from the frozen `.pre-encryption` snapshot, which is exactly
+    // what a row-count/schema comparison would have choked on -- permanently,
+    // since there is no way back from that once it starts throwing.
+    final keyed = raw.sqlite3.open(live().path)
+      ..execute('PRAGMA key = "x\'${hexOf(key)}\'";');
+    final db = AppDatabase(NativeDatabase.opened(keyed));
+    await CustomersRepository(
+      db,
+      DeviceContext(
+        firmId: firmId,
+        deviceId: '22222222-2222-4222-8222-222222222222',
+        deviceShortCode: 'A3F9',
+        userId: '33333333-3333-4333-8333-333333333333',
+        hlc: Hlc(clock: () => 2000),
+      ),
+    ).create(name: 'Added After Encrypting');
+    await db.customStatement('PRAGMA user_version = 2');
+    await db.close();
+
+    await service.retirePreEncryptionCopy(firmId, key);
+    expect(keptPlaintext().existsSync(), isFalse);
+
+    // The data is all still there, new row included.
+    final probe = openKeyed(live(), key);
+    expect(probe.select('SELECT count(*) AS c FROM customers').first['c'], 3);
+    probe.close();
+  });
+
+  test('the plaintext copy is not retired on a key that cannot actually read '
+      'the live file', () async {
+    await crashMigrateThenRecover();
+    final wrongKey = Uint8List.fromList(List.generate(32, (i) => 255 - i));
+
+    await expectLater(
+      service.retirePreEncryptionCopy(firmId, wrongKey),
+      throwsA(isA<StateError>()),
+    );
+    expect(keptPlaintext().existsSync(), isTrue);
+    expect(isCiphertext(keptPlaintext()), isFalse);
+  });
+
+  test('the plaintext copy is not retired when the live file no longer holds '
+      'this firm', () async {
+    final key = await crashMigrateThenRecover();
+    final keyed = raw.sqlite3.open(live().path)
+      ..execute('PRAGMA key = "x\'${hexOf(key)}\'";')
+      ..execute('DELETE FROM firms');
+    keyed.close();
+
+    await expectLater(
+      service.retirePreEncryptionCopy(firmId, key),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('no row for firm'),
+        ),
+      ),
+    );
+    expect(keptPlaintext().existsSync(), isTrue);
+  });
+
+  test('a migration whose own plaintext copy vanishes fails loudly rather '
+      'than passing as a success', () async {
+    await seedPlaintextFirm();
+    // The hook fires in the swap-to-promotion window; deleting the sidecar
+    // there is the only way this method can reach its own retirement step with
+    // nothing to retire.
+    service.afterDatabaseSwapHook = () async => keptPlaintext().deleteSync();
+
+    await expectLater(
+      service.migrateToEncrypted(
+        firmId,
+        passphrase: passphrase,
+        onRecoveryCodeGenerated: (_) => fail('this is not a success'),
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('disappeared mid-migration'),
+        ),
+      ),
+    );
   });
 }
