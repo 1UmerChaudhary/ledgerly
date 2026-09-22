@@ -17,6 +17,8 @@ dependencies:
     path: ../packages/ledgerly_data
   flutter_riverpod: ^3.4.3
   intl: ^0.20.3
+  # @visibleForTesting on EncryptionService's crash-simulation seam.
+  meta: ^1.15.0
   path: ^1.9.1
   sqlite3: ^3.6.0
   uuid: ^4.6.0

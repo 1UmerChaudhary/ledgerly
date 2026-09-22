@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:ledgerly_core/ledgerly_core.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
+import 'package:meta/meta.dart';
 import 'package:sqlite3/sqlite3.dart' as raw;
 
 import '../../bootstrap/app_paths.dart';
@@ -16,6 +17,14 @@ class EncryptionService {
   final AppPaths paths;
 
   final _random = Random.secure();
+
+  /// Test-only hook: fires inside [migrateToEncrypted] after the encrypted
+  /// file has been renamed over the live one and BEFORE the staged envelope is
+  /// promoted -- the one window where a crash leaves the database ciphertext
+  /// while the firm still reads as unencrypted. Throwing from it simulates the
+  /// process dying exactly there. No-op in production.
+  @visibleForTesting
+  Future<void> Function()? afterDatabaseSwapHook;
 
   Uint8List _randomBytes(int length) =>
       Uint8List.fromList(List.generate(length, (_) => _random.nextInt(256)));
@@ -46,32 +55,49 @@ class EncryptionService {
     required Uint8List masterKey,
     required String passphrase,
     required void Function(String recoveryCode) onRecoveryCodeGenerated,
+  }) async => onRecoveryCodeGenerated(
+    await _writeEnvelopeTo(
+      _storeFor(firmId),
+      masterKey: masterKey,
+      passphrase: passphrase,
+    ),
+  );
+
+  /// Wraps [masterKey] under both secrets and writes the envelope to [store],
+  /// returning the recovery code generated for it. Takes the store rather than
+  /// a firm id because [migrateToEncrypted] writes its envelope to a staging
+  /// path first -- see there for why that matters.
+  Future<String> _writeEnvelopeTo(
+    KeyEnvelopeStore store, {
+    required Uint8List masterKey,
+    required String passphrase,
   }) async {
     final recoveryCode = encodeRecoveryCode(_randomBytes(32));
     final passphraseSalt = _randomBytes(16);
     final recoveryCodeSalt = _randomBytes(16);
-    final envelope = KeyEnvelope(
-      byPassphrase: await wrapKey(
-        masterKey,
-        wrappingKeyBytes: await deriveWrappingKey(
-          passphrase,
-          salt: passphraseSalt,
+    await store.write(
+      KeyEnvelope(
+        byPassphrase: await wrapKey(
+          masterKey,
+          wrappingKeyBytes: await deriveWrappingKey(
+            passphrase,
+            salt: passphraseSalt,
+          ),
         ),
-      ),
-      passphraseSalt: passphraseSalt,
-      byRecoveryCode: await wrapKey(
-        masterKey,
-        // The printed code itself is the secret for its own KDF -- what the
-        // user types back in is all we ever get to re-derive from.
-        wrappingKeyBytes: await deriveWrappingKey(
-          recoveryCode,
-          salt: recoveryCodeSalt,
+        passphraseSalt: passphraseSalt,
+        byRecoveryCode: await wrapKey(
+          masterKey,
+          // The printed code itself is the secret for its own KDF -- what the
+          // user types back in is all we ever get to re-derive from.
+          wrappingKeyBytes: await deriveWrappingKey(
+            recoveryCode,
+            salt: recoveryCodeSalt,
+          ),
         ),
+        recoveryCodeSalt: recoveryCodeSalt,
       ),
-      recoveryCodeSalt: recoveryCodeSalt,
     );
-    await _storeFor(firmId).write(envelope);
-    onRecoveryCodeGenerated(recoveryCode);
+    return recoveryCode;
   }
 
   /// Turns an existing PLAINTEXT firm database into an encrypted one, in
@@ -82,17 +108,44 @@ class EncryptionService {
   /// the same precondition `BackupService.restoreFrom` documents, for the
   /// same reason.
   ///
-  /// The ordering below is the substance of this method, not decoration. The
-  /// encrypted copy is written to a scratch file and proved good against the
-  /// still-untouched original -- cipher integrity, SQL integrity, schema,
-  /// drift's schema version, and a row count per table -- before anything
-  /// replaces the original, and the original is then kept as a
-  /// `.pre-encryption` sidecar rather than deleted.
+  /// The ordering below is the substance of this method, not decoration.
+  ///
+  /// 1. The encrypted copy is written to a scratch file and proved good
+  ///    against the still-untouched original -- cipher integrity, SQL
+  ///    integrity, schema, drift's schema version, and a row count per table.
+  /// 2. The plaintext original is kept beside it as a `.pre-encryption`
+  ///    sidecar.
+  /// 3. The envelope is written to a STAGING path, not its real one.
+  /// 4. The encrypted file is renamed over the live database.
+  /// 5. Only then is the staged envelope promoted to its real path.
+  ///
+  /// Steps 3-5 are in that order because [isEncrypted] -- the only thing that
+  /// ever distinguishes an encrypted firm from a plaintext one -- is just
+  /// "does the envelope file exist". Promote the envelope before the swap and
+  /// a crash in between leaves a firm that reports itself encrypted while its
+  /// database is still plaintext; nothing in this app keys a connection unless
+  /// a session key is already in memory, so that firm would keep opening,
+  /// reading and WRITING real ledger data in plaintext while every screen
+  /// called it protected. In the order above the same crash leaves the
+  /// envelope unpromoted, so the firm reads as unencrypted and an unkeyed open
+  /// of the now-ciphertext file fails loudly -- and
+  /// [recoverInterruptedMigration] repairs it from the staged envelope.
+  ///
+  /// [onRecoveryCodeGenerated] fires last of all, once the live encrypted file
+  /// has been read back and the plaintext sidecar retired, so that a caller
+  /// whose callback throws cannot leave a plaintext copy of the ledger on
+  /// disk. If this method throws after the swap, the firm is encrypted and
+  /// unlockable by the passphrase it was given even though no recovery code
+  /// was issued -- `rotateRecoveryCode` mints a fresh one after unlocking.
   Future<void> migrateToEncrypted(
     String firmId, {
     required String passphrase,
     required void Function(String recoveryCode) onRecoveryCodeGenerated,
   }) async {
+    // A previous attempt may have died between the swap and the promotion.
+    // Settle that first, so a retry heals rather than tripping the guards.
+    await recoverInterruptedMigration(firmId);
+
     final liveFile = paths.firmDatabase(firmId);
     if (!liveFile.existsSync()) {
       throw StateError('Firm $firmId has no database file to migrate');
@@ -126,34 +179,103 @@ class EncryptionService {
     }
 
     // Verified. Keep the plaintext original beside the file it is about to
-    // replace, write the envelope, then swap. Envelope-before-swap is
-    // deliberate: a crash in that gap leaves an envelope over a still-
-    // plaintext database, which the sidecar and the untouched live file make
-    // repairable. The other order would leave ciphertext with its key wrapped
-    // nowhere, which is not.
-    await liveFile.copy('${liveFile.path}.pre-encryption');
+    // replace; it is the fallback for every step from here on, and is retired
+    // at the end of this method once the live encrypted file has been read
+    // back successfully.
+    final keptPlaintext = File('${liveFile.path}.pre-encryption');
+    await liveFile.copy(keptPlaintext.path);
 
-    String? recoveryCode;
-    await enableEncryptionEnvelopeOnly(
-      firmId,
+    final pendingEnvelope = _pendingEnvelopeFile(firmId);
+    final recoveryCode = await _writeEnvelopeTo(
+      KeyEnvelopeStore(pendingEnvelope),
       masterKey: masterKey,
       passphrase: passphrase,
-      onRecoveryCodeGenerated: (code) => recoveryCode = code,
     );
-    try {
-      await tmpEncrypted.rename(liveFile.path);
-    } on FileSystemException {
-      // The envelope is written but the database is still plaintext, so every
-      // later open would key a plaintext file and fail on its first read. Put
-      // the firm back as it was rather than leave it in that state.
-      final envelopeFile = paths.firmKeyEnvelope(firmId);
-      if (envelopeFile.existsSync()) envelopeFile.deleteSync();
-      rethrow;
+
+    await tmpEncrypted.rename(liveFile.path);
+    // Any rollback journal beside the live path belongs to the plaintext
+    // database that was just replaced, and that database is preserved in the
+    // sidecar. Leaving one next to a ciphertext file is both a corruption risk
+    // and a plaintext leak.
+    _deleteJournalSidecars(liveFile);
+    await afterDatabaseSwapHook?.call();
+    await pendingEnvelope.rename(paths.firmKeyEnvelope(firmId).path);
+
+    // Read the file that is now live -- not the scratch file that was verified
+    // before the rename -- back through the key, against the plaintext copy.
+    // Only a clean read retires the last plaintext copy of the ledger; leaving
+    // one on disk would undo the point of encrypting at all.
+    _verifyEncryptedCopy(
+      plaintext: keptPlaintext,
+      encrypted: liveFile,
+      keyHex: keyHex,
+    );
+    keptPlaintext.deleteSync();
+
+    // Last, so that a caller whose callback throws cannot strand the plaintext
+    // sidecar that the two lines above exist to remove.
+    onRecoveryCodeGenerated(recoveryCode);
+  }
+
+  /// Repairs a [migrateToEncrypted] that died between the database swap and
+  /// the envelope promotion -- the only window that leaves the two disagreeing.
+  ///
+  /// It cannot read the database to decide (the key is inside the very
+  /// envelope in question), so it reads the file header instead: SQLCipher
+  /// encrypts page 1 whole, including SQLite's magic string, so finding that
+  /// string is a reliable "this file is still plaintext".
+  ///
+  /// [migrateToEncrypted] calls this itself before doing anything. Task 7's
+  /// open/unlock flow should call it at firm-open time too, as defence in
+  /// depth -- a firm that crashed mid-migration and is never migrated again
+  /// would otherwise stay stranded.
+  Future<void> recoverInterruptedMigration(String firmId) async {
+    final pendingEnvelope = _pendingEnvelopeFile(firmId);
+    final liveFile = paths.firmDatabase(firmId);
+    if (pendingEnvelope.existsSync()) {
+      final envelope = paths.firmKeyEnvelope(firmId);
+      if (!envelope.existsSync() &&
+          liveFile.existsSync() &&
+          !_isPlaintextSqlite(liveFile)) {
+        // The swap happened: this staged envelope holds the only wrapped copy
+        // of the key for the file now on disk. Finish what was interrupted.
+        await pendingEnvelope.rename(envelope.path);
+      } else {
+        // The swap never happened (or a real envelope is already in place), so
+        // the staged key wraps a database that is not there. Drop it and leave
+        // the firm as the plaintext, unencrypted firm it still is.
+        pendingEnvelope.deleteSync();
+      }
     }
-    // Only now, with the encrypted file actually in place, is the recovery
-    // code worth showing: every path above this line ends with an unencrypted
-    // firm and a code that unlocks nothing.
-    onRecoveryCodeGenerated(recoveryCode!);
+    for (final leftover in [
+      File('${pendingEnvelope.path}.tmp'),
+      File('${liveFile.path}.encrypting.tmp'),
+    ]) {
+      if (leftover.existsSync()) leftover.deleteSync();
+    }
+  }
+
+  File _pendingEnvelopeFile(String firmId) =>
+      File('${paths.firmKeyEnvelope(firmId).path}.pending');
+
+  /// Reads only the 16-byte header, never the whole (potentially large) file.
+  static bool _isPlaintextSqlite(File file) {
+    final handle = file.openSync();
+    try {
+      final header = handle.readSync(16);
+      return header.length == 16 &&
+          String.fromCharCodes(header.sublist(0, 15)) == 'SQLite format 3' &&
+          header[15] == 0;
+    } finally {
+      handle.closeSync();
+    }
+  }
+
+  static void _deleteJournalSidecars(File databaseFile) {
+    for (final suffix in const ['-wal', '-shm', '-journal']) {
+      final sidecar = File('${databaseFile.path}$suffix');
+      if (sidecar.existsSync()) sidecar.deleteSync();
+    }
   }
 
   /// SQLCipher's own documented plaintext-to-encrypted path: attach an empty
@@ -165,6 +287,25 @@ class EncryptionService {
   }) {
     final source = raw.sqlite3.open(from.path);
     try {
+      // The swap at the end of migrateToEncrypted is a file rename, which
+      // moves only the database file. In WAL mode the old plaintext database's
+      // -wal/-shm would be left sitting beside the new ciphertext one: a
+      // corruption risk and a plaintext leak at once. Nothing in this app sets
+      // journal_mode today, so this only ever fires if that changes -- and
+      // then it fires before anything has been written.
+      final journalMode = source
+          .select('PRAGMA main.journal_mode')
+          .first
+          .values
+          .first
+          .toString()
+          .toLowerCase();
+      if (journalMode != 'delete') {
+        throw StateError(
+          'Refusing to encrypt a database in "$journalMode" journal mode: '
+          'the rename-based swap only carries the main database file.',
+        );
+      }
       // sqlcipher_export copies the schema, the indexes and every row -- but
       // NOT user_version, which is where drift keeps its schema version. Left
       // at 0 the migrated database looks brand new to drift, which then runs

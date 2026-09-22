@@ -11,8 +11,9 @@ import 'package:test/test.dart';
 
 /// The one migration in this app that rewrites a firm's live database file
 /// while real customer and transaction rows are already in it. Everything
-/// here is about one property: the plaintext original is never touched until
-/// an encrypted copy has been proved good, and is still recoverable after.
+/// here is about two properties: the plaintext original is never touched until
+/// an encrypted copy has been proved good, and no state this can be
+/// interrupted in leaves the firm quietly running on plaintext.
 ///
 /// Runs under `flutter test`, not plain `dart test`: EncryptionService reaches
 /// AppPaths, which imports path_provider, which pulls in dart:ui. It is a
@@ -36,12 +37,23 @@ void main() {
   String hexOf(Uint8List key) =>
       key.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
+  File live() => paths.firmDatabase(firmId);
+  File envelope() => paths.firmKeyEnvelope(firmId);
+  File pendingEnvelope() => File('${envelope().path}.pending');
+  File scratch() => File('${live().path}.encrypting.tmp');
+  File keptPlaintext() => File('${live().path}.pre-encryption');
+
+  bool isCiphertext(File file) =>
+      !String.fromCharCodes(
+        file.readAsBytesSync().sublist(0, 16),
+      ).startsWith('SQLite format 3');
+
   /// A real, plaintext firm database of the shape an existing customer already
   /// has on disk: the full drift schema plus rows in several tables. Closed
   /// before it is returned -- SQLite must not have the file open while
   /// sqlcipher_export rewrites it.
   Future<void> seedPlaintextFirm() async {
-    final db = AppDatabase(NativeDatabase(paths.firmDatabase(firmId)));
+    final db = AppDatabase(NativeDatabase(live()));
     final ctx = DeviceContext(
       firmId: firmId,
       deviceId: '22222222-2222-4222-8222-222222222222',
@@ -59,11 +71,9 @@ void main() {
       raw.sqlite3.open(file.path, mode: raw.OpenMode.readOnly)
         ..execute('PRAGMA key = "x\'${hexOf(key)}\'";');
 
-  test('migrating encrypts the live file in place, keeps the plaintext '
-      'original, and the envelope unlocks what was written', () async {
+  test('migrating encrypts the live file in place, retires the plaintext '
+      'copy, and the envelope unlocks what was written', () async {
     await seedPlaintextFirm();
-    final live = paths.firmDatabase(firmId);
-    final plaintextBytes = live.readAsBytesSync();
 
     String? recoveryCode;
     await service.migrateToEncrypted(
@@ -72,24 +82,28 @@ void main() {
       onRecoveryCodeGenerated: (code) => recoveryCode = code,
     );
 
-    // The live file is now ciphertext...
+    // The live file is now ciphertext, and NOTHING plaintext is left behind:
+    // a copy of the ledger sitting beside the encrypted one would undo the
+    // entire point of encrypting it.
+    expect(isCiphertext(live()), isTrue);
+    expect(keptPlaintext().existsSync(), isFalse);
+    expect(scratch().existsSync(), isFalse);
+    expect(pendingEnvelope().existsSync(), isFalse);
     expect(
-      String.fromCharCodes(live.readAsBytesSync().sublist(0, 16)),
-      isNot(startsWith('SQLite format 3')),
+      paths.firms
+          .listSync()
+          .map((e) => e.path.split(Platform.pathSeparator).last)
+          .toList()
+        ..sort(),
+      ['$firmId.db', '$firmId.key.json'],
     );
-    // ...the plaintext original survives beside it, byte for byte...
-    final kept = File('${live.path}.pre-encryption');
-    expect(kept.existsSync(), isTrue);
-    expect(kept.readAsBytesSync(), plaintextBytes);
-    // ...and the scratch file is gone.
-    expect(File('${live.path}.encrypting.tmp').existsSync(), isFalse);
 
     // The envelope's key is genuinely the key the file was written with:
     // the only way to know is a real read, which PRAGMA key alone is not.
     expect(await service.isEncrypted(firmId), isTrue);
     final key = await service.unlockWithPassphrase(firmId, passphrase);
     expect(key, isNotNull);
-    final probe = openKeyed(live, key!);
+    final probe = openKeyed(live(), key!);
     expect(probe.select('PRAGMA quick_check').first.values.first, 'ok');
     expect(probe.select('SELECT count(*) AS c FROM customers').first['c'], 2);
     expect(probe.select('SELECT count(*) AS c FROM firms').first['c'], 1);
@@ -99,7 +113,7 @@ void main() {
     probe.close();
 
     // And the same key opens it through drift itself, as the app will.
-    final keyed = raw.sqlite3.open(live.path)
+    final keyed = raw.sqlite3.open(live().path)
       ..execute('PRAGMA key = "x\'${hexOf(key)}\'";');
     final db = AppDatabase(NativeDatabase.opened(keyed));
     final names = await db.customSelect('SELECT name FROM customers').get();
@@ -112,11 +126,104 @@ void main() {
     expect(viaCode, key);
   });
 
+  test('a crash between the database swap and the envelope promotion leaves '
+      'the firm unencrypted-and-loud, never encrypted-and-silent', () async {
+    await seedPlaintextFirm();
+    service.afterDatabaseSwapHook = () async =>
+        throw const FormatException('simulated crash');
+
+    await expectLater(
+      service.migrateToEncrypted(
+        firmId,
+        passphrase: passphrase,
+        onRecoveryCodeGenerated: (_) => fail('the crash preceded this'),
+      ),
+      throwsA(isA<FormatException>()),
+    );
+
+    // The database really was swapped...
+    expect(isCiphertext(live()), isTrue);
+    // ...but the firm does NOT claim to be encrypted, because the envelope was
+    // never promoted. That is the whole point: an unkeyed open of a ciphertext
+    // file fails loudly, where the reverse mistake -- a firm calling itself
+    // encrypted over a plaintext file -- would keep writing ledger rows in
+    // the clear while every screen said it was protected.
+    expect(await service.isEncrypted(firmId), isFalse);
+    expect(envelope().existsSync(), isFalse);
+    // The key material and the original data are both still on disk.
+    expect(pendingEnvelope().existsSync(), isTrue);
+    expect(keptPlaintext().existsSync(), isTrue);
+    expect(isCiphertext(keptPlaintext()), isFalse);
+    final unkeyed = raw.sqlite3.open(
+      live().path,
+      mode: raw.OpenMode.readOnly,
+    );
+    expect(() => unkeyed.select('PRAGMA quick_check'), throwsA(anything));
+    unkeyed.close();
+
+    // Recovery promotes the staged envelope and the firm comes up encrypted.
+    service.afterDatabaseSwapHook = null;
+    await service.recoverInterruptedMigration(firmId);
+    expect(await service.isEncrypted(firmId), isTrue);
+    expect(pendingEnvelope().existsSync(), isFalse);
+    final key = await service.unlockWithPassphrase(firmId, passphrase);
+    expect(key, isNotNull);
+    final probe = openKeyed(live(), key!);
+    expect(probe.select('SELECT count(*) AS c FROM customers').first['c'], 2);
+    probe.close();
+  });
+
+  test('a retry after an interrupted migration heals it first, then refuses '
+      'as already encrypted instead of re-encrypting', () async {
+    await seedPlaintextFirm();
+    service.afterDatabaseSwapHook = () async =>
+        throw const FormatException('simulated crash');
+    await expectLater(
+      service.migrateToEncrypted(
+        firmId,
+        passphrase: passphrase,
+        onRecoveryCodeGenerated: (_) {},
+      ),
+      throwsA(isA<FormatException>()),
+    );
+
+    service.afterDatabaseSwapHook = null;
+    await expectLater(
+      service.migrateToEncrypted(
+        firmId,
+        passphrase: passphrase,
+        onRecoveryCodeGenerated: (_) {},
+      ),
+      throwsA(isA<StateError>()),
+    );
+    expect(await service.isEncrypted(firmId), isTrue);
+    final key = await service.unlockWithPassphrase(firmId, passphrase);
+    final probe = openKeyed(live(), key!);
+    expect(probe.select('SELECT count(*) AS c FROM customers').first['c'], 2);
+    probe.close();
+  });
+
+  test('a staged envelope beside a still-plaintext database is dropped, not '
+      'promoted', () async {
+    await seedPlaintextFirm();
+    final plaintextBytes = live().readAsBytesSync();
+    // The state a crash between staging the envelope and the swap leaves.
+    pendingEnvelope().writeAsStringSync('{}');
+    scratch().writeAsStringSync('leftover');
+
+    await service.recoverInterruptedMigration(firmId);
+
+    expect(await service.isEncrypted(firmId), isFalse);
+    expect(envelope().existsSync(), isFalse);
+    expect(pendingEnvelope().existsSync(), isFalse);
+    expect(scratch().existsSync(), isFalse);
+    expect(live().readAsBytesSync(), plaintextBytes);
+  });
+
   test('a database that cannot be exported leaves the live file untouched and '
       'the firm unencrypted', () async {
-    final live = paths.firmDatabase(firmId);
     final garbage = Uint8List.fromList(List.generate(4096, (i) => i % 256));
-    live.writeAsBytesSync(garbage);
+    live().writeAsBytesSync(garbage);
 
     await expectLater(
       service.migrateToEncrypted(
@@ -127,36 +234,48 @@ void main() {
       throwsA(anything),
     );
 
-    expect(live.readAsBytesSync(), garbage);
+    expect(live().readAsBytesSync(), garbage);
     expect(await service.isEncrypted(firmId), isFalse);
-    expect(File('${live.path}.pre-encryption').existsSync(), isFalse);
-    expect(File('${live.path}.encrypting.tmp').existsSync(), isFalse);
+    expect(keptPlaintext().existsSync(), isFalse);
+    expect(scratch().existsSync(), isFalse);
+    expect(pendingEnvelope().existsSync(), isFalse);
   });
 
-  test('migrating a firm that is already encrypted is refused, so the one '
-      'plaintext copy is never overwritten with ciphertext', () async {
+  test('a database in WAL mode is refused, because the rename-based swap '
+      'would strand its -wal beside the ciphertext', () async {
     await seedPlaintextFirm();
-    final live = paths.firmDatabase(firmId);
-    await service.migrateToEncrypted(
-      firmId,
-      passphrase: passphrase,
-      onRecoveryCodeGenerated: (_) {},
-    );
-    final keptBytes = File('${live.path}.pre-encryption').readAsBytesSync();
+    final toWal = raw.sqlite3.open(live().path)
+      ..execute('PRAGMA journal_mode = WAL;');
+    toWal.close();
+    final walBytes = live().readAsBytesSync();
 
     await expectLater(
       service.migrateToEncrypted(
         firmId,
         passphrase: passphrase,
-        onRecoveryCodeGenerated: (_) {},
+        onRecoveryCodeGenerated: (_) => fail('must not reach the envelope'),
       ),
       throwsA(isA<StateError>()),
     );
-    expect(File('${live.path}.pre-encryption').readAsBytesSync(), keptBytes);
-    expect(
-      String.fromCharCodes(keptBytes.sublist(0, 16)),
-      startsWith('SQLite format 3'),
+
+    expect(live().readAsBytesSync(), walBytes);
+    expect(await service.isEncrypted(firmId), isFalse);
+    expect(scratch().existsSync(), isFalse);
+  });
+
+  test('stale journal sidecars do not survive the swap next to the encrypted '
+      'file', () async {
+    await seedPlaintextFirm();
+    final shm = File('${live().path}-shm')..writeAsStringSync('stale');
+
+    await service.migrateToEncrypted(
+      firmId,
+      passphrase: passphrase,
+      onRecoveryCodeGenerated: (_) {},
     );
+
+    expect(shm.existsSync(), isFalse);
+    expect(isCiphertext(live()), isTrue);
   });
 
   test('migrating a firm with no database file at all is refused', () async {
@@ -168,6 +287,6 @@ void main() {
       ),
       throwsA(isA<StateError>()),
     );
-    expect(paths.firmDatabase(firmId).existsSync(), isFalse);
+    expect(live().existsSync(), isFalse);
   });
 }
