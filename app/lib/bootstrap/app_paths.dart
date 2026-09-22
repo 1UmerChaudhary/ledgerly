@@ -15,6 +15,8 @@ class AppPaths {
   Directory get firms => Directory(p.join(root.path, 'firms'));
   Directory get backups => Directory(p.join(root.path, 'backups'));
   File firmDatabase(String firmId) => File(p.join(firms.path, '$firmId.db'));
+  File firmKeyEnvelope(String firmId) =>
+      File(p.join(firms.path, '$firmId.key.json'));
 
   static Future<AppPaths> resolve() async {
     final local = Platform.isWindows

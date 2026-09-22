@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:ledgerly_core/ledgerly_core.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 
@@ -20,13 +21,32 @@ final appPathsProvider = Provider<AppPaths>(
   (ref) => throw UnimplementedError('appPathsProvider is overridden in main()'),
 );
 
+/// The current session's master key, held in memory only and never persisted:
+/// set at unlock time, read by the database opener and by backups.
+final firmMasterKeyProvider = StateProvider<Uint8List?>((ref) => null);
+
 typedef DatabaseOpener = Future<AppDatabase> Function(String firmId);
 
 final databaseOpenerProvider = Provider<DatabaseOpener>((ref) {
   final paths = ref.watch(appPathsProvider);
-  return (firmId) async => AppDatabase(
-    NativeDatabase.createInBackground(paths.firmDatabase(firmId)),
-  );
+  return (firmId) async {
+    final masterKey = ref.read(firmMasterKeyProvider);
+    return AppDatabase(
+      NativeDatabase.createInBackground(
+        paths.firmDatabase(firmId),
+        // PRAGMA key must run before drift touches anything else. No key set
+        // for this session means an unencrypted firm, which opens as before.
+        setup: masterKey == null
+            ? null
+            : (rawDb) {
+                final hex = masterKey
+                    .map((b) => b.toRadixString(16).padLeft(2, '0'))
+                    .join();
+                rawDb.execute('PRAGMA key = "x\'$hex\'";');
+              },
+      ),
+    );
+  };
 });
 
 /// Everything a screen needs once a firm's database is open.
