@@ -59,7 +59,13 @@ class KeyEnvelopeStore {
   Future<KeyEnvelope?> read() async {
     if (!await path.exists()) return null;
     final text = await path.readAsString();
-    return KeyEnvelope.fromJson(jsonDecode(text) as Map<String, dynamic>);
+    try {
+      return KeyEnvelope.fromJson(jsonDecode(text) as Map<String, dynamic>);
+    } catch (e) {
+      throw FormatException(
+        'Failed to parse envelope from ${path.path}: $e',
+      );
+    }
   }
 
   Future<void> write(KeyEnvelope envelope) async {
@@ -67,8 +73,7 @@ class KeyEnvelopeStore {
     await tmp.writeAsString(jsonEncode(envelope.toJson()), flush: true);
     final backup = File('${path.path}.bak');
     if (await path.exists()) {
-      if (await backup.exists()) await backup.delete();
-      await path.rename(backup.path);
+      await path.copy(backup.path);
     }
     await tmp.rename(path.path);
   }
