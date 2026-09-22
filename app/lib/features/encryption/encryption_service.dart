@@ -689,17 +689,17 @@ class EncryptionService {
       newPassphrase,
       salt: newSalt,
     );
-    await store.write(
-      KeyEnvelope(
-        byPassphrase: await wrapKey(
-          masterKey,
-          wrappingKeyBytes: newWrappingKey,
-        ),
-        passphraseSalt: newSalt,
-        byRecoveryCode: existing.byRecoveryCode,
-        recoveryCodeSalt: existing.recoveryCodeSalt,
-      ),
+    final rotated = KeyEnvelope(
+      byPassphrase: await wrapKey(masterKey, wrappingKeyBytes: newWrappingKey),
+      passphraseSalt: newSalt,
+      byRecoveryCode: existing.byRecoveryCode,
+      recoveryCodeSalt: existing.recoveryCodeSalt,
     );
+    await store.write(rotated);
+    // Revoking the old passphrase is the whole point of this method, and it
+    // is not revoked while an envelope wrapping the same master key under it
+    // sits beside the new one.
+    await store.retireBackup(rotated);
   }
 
   Future<String> rotateRecoveryCode(
@@ -715,17 +715,19 @@ class EncryptionService {
     final newCode = encodeRecoveryCode(newRecoverySecret);
     final newSalt = _randomBytes(16);
     final newWrappingKey = await deriveWrappingKey(newCode, salt: newSalt);
-    await store.write(
-      KeyEnvelope(
-        byPassphrase: existing.byPassphrase,
-        passphraseSalt: existing.passphraseSalt,
-        byRecoveryCode: await wrapKey(
-          masterKey,
-          wrappingKeyBytes: newWrappingKey,
-        ),
-        recoveryCodeSalt: newSalt,
+    final rotated = KeyEnvelope(
+      byPassphrase: existing.byPassphrase,
+      passphraseSalt: existing.passphraseSalt,
+      byRecoveryCode: await wrapKey(
+        masterKey,
+        wrappingKeyBytes: newWrappingKey,
       ),
+      recoveryCodeSalt: newSalt,
     );
+    await store.write(rotated);
+    // As in [changePassphrase]: a printed sheet is only retired once the
+    // envelope that still honours it is gone from disk.
+    await store.retireBackup(rotated);
     return newCode;
   }
 }

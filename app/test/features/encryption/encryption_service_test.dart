@@ -147,6 +147,62 @@ void main() {
     },
   );
 
+  /// A rotation that leaves the superseded envelope on disk has revoked
+  /// nothing. `.bak` wraps the SAME master key (rotation re-wraps, it never
+  /// re-keys the database), so anyone who can read the folder -- which is the
+  /// whole threat model at-rest encryption exists for -- renames it back over
+  /// `.key.json` and unlocks with the secret the UI has just promised is
+  /// dead.
+  test('changing the passphrase retires the superseded envelope instead of '
+      'leaving the old passphrase working from a .bak beside it', () async {
+    final service = EncryptionService(paths: paths);
+    await service.enableEncryption(
+      firmId,
+      passphrase: 'old passphrase',
+      onRecoveryCodeGenerated: (_) {},
+    );
+    final masterKey = (await service.unlockWithPassphrase(
+      firmId,
+      'old passphrase',
+    ))!;
+    await service.changePassphrase(
+      firmId,
+      masterKey: masterKey,
+      newPassphrase: 'new passphrase',
+    );
+
+    final bak = File('${paths.firmKeyEnvelope(firmId).path}.bak');
+    expect(bak.existsSync(), isFalse);
+
+    // The point, stated as the attack: put whatever is left back and the
+    // retired passphrase must still open nothing.
+    if (bak.existsSync()) bak.copySync(paths.firmKeyEnvelope(firmId).path);
+    expect(
+      await service.unlockWithPassphrase(firmId, 'old passphrase'),
+      isNull,
+    );
+  });
+
+  test(
+    'rotating the recovery code retires the superseded envelope too',
+    () async {
+      final service = EncryptionService(paths: paths);
+      String? oldCode;
+      await service.enableEncryption(
+        firmId,
+        passphrase: 'p',
+        onRecoveryCodeGenerated: (code) => oldCode = code,
+      );
+      final masterKey = (await service.unlockWithPassphrase(firmId, 'p'))!;
+      await service.rotateRecoveryCode(firmId, masterKey: masterKey);
+
+      final bak = File('${paths.firmKeyEnvelope(firmId).path}.bak');
+      expect(bak.existsSync(), isFalse);
+      if (bak.existsSync()) bak.copySync(paths.firmKeyEnvelope(firmId).path);
+      expect(await service.unlockWithRecoveryCode(firmId, oldCode!), isNull);
+    },
+  );
+
   test('a firm with no envelope file is reported as not encrypted', () async {
     final service = EncryptionService(paths: paths);
     expect(await service.isEncrypted(firmId), isFalse);

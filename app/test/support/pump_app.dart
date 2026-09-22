@@ -72,7 +72,11 @@ Future<ProviderContainer> pumpLedgerly(
     try {
       await db.customSelect('SELECT 1').getSingle();
       return db;
-    } on Exception {
+    } on Object {
+      // `on Object`, not `on Exception`: drift reports a closed connection as
+      // a StateError ("Can't re-open a database after closing it"), which is
+      // an Error, so `on Exception` silently never fired and this fake could
+      // not actually reopen anything.
       db = AppDatabase(NativeDatabase.memory());
       opened.add(db);
       if (seed != null) await seed(db, makeCtx());
@@ -130,7 +134,7 @@ Future<ProviderContainer> pumpLedgerly(
       // db as part of that flow — closing again here is a no-op either way.
       try {
         await d.close();
-      } on Exception {
+      } on Object {
         // already closed
       }
     }

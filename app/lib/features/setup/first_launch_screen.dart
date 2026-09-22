@@ -224,8 +224,9 @@ class _FirstLaunchScreenState extends ConsumerState<FirstLaunchScreen> {
                           codeShownMessage:
                               "This is the recovery code for the firm you're "
                               'about to create. It is shown once and never '
-                              'again: write it down or print it, then type it '
-                              'back below.',
+                              'again: write it down, along with the firm and '
+                              'date under it, then type it back below.',
+                          firmName: _name.text.trim(),
                           commitLabel: l10n.createFirm,
                           compact: compact,
                         )

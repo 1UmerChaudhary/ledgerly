@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ledgerly/bootstrap/providers.dart';
+import 'package:ledgerly/features/dashboard/dashboard_screen.dart';
 import 'package:ledgerly/features/encryption/encryption_service.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 
@@ -71,10 +73,16 @@ void main() {
       final code = shownRecoveryCode(tester);
       expect(code, isNotEmpty);
 
-      // Nothing is committed to this session until the printed code has been
-      // typed back: the button is there, and tapping it does nothing.
+      // The file on disk is ciphertext the moment the migration returns, so
+      // the session holds its key from here -- see the Esc test below for
+      // why waiting until the type-back is not an option. What the type-back
+      // gates is the WIZARD finishing, never whether the key works.
+      expect(container.read(firmMasterKeyProvider), isNotNull);
+
+      // The wizard does not finish until the printed code has been typed
+      // back: the button is there, and tapping it does nothing.
       await tap(tester, const Key('encryption.confirmEnable'));
-      expect(container.read(firmMasterKeyProvider), isNull);
+      expect(find.byKey(const Key('encryption.enabled')), findsNothing);
       expect(find.byKey(const Key('encryption.setupWizard')), findsOneWidget);
 
       // A near miss is still a miss.
@@ -84,13 +92,64 @@ void main() {
         '${code.substring(0, code.length - 1)}X',
       );
       await tap(tester, const Key('encryption.confirmEnable'));
-      expect(container.read(firmMasterKeyProvider), isNull);
+      expect(find.byKey(const Key('encryption.enabled')), findsNothing);
 
       await type(tester, const Key('encryption.recoveryCodeConfirm'), code);
       await tap(tester, const Key('encryption.confirmEnable'));
 
       expect(await encryption.isEncrypted(testFirmId), isTrue);
       expect(container.read(firmMasterKeyProvider), isNotNull);
+      expect(find.byKey(const Key('encryption.enabled')), findsOneWidget);
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
+    'leaving the wizard while the recovery code is on screen lands on a '
+    'working dashboard, not on a firm whose connection was closed under it',
+    (tester) async {
+      final encryption = FakeEncryptionService();
+      final container = await pumpLedgerly(
+        tester,
+        seed: seed,
+        encryption: encryption,
+      );
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+      await tap(tester, const Key('encryption.enableSection'));
+      await type(tester, const Key('encryption.passphrase'), 'a passphrase');
+      await type(
+        tester,
+        const Key('encryption.passphraseConfirm'),
+        'a passphrase',
+      );
+      await tap(tester, const Key('encryption.generate'));
+      expect(find.byKey(const Key('encryption.recoveryCode')), findsOneWidget);
+
+      // This route sits inside the app shell: the navigation rail is live and
+      // Esc goes to the dashboard. The migration has already closed the
+      // firm's connection, so unless the key reached the session the instant
+      // the migration returned, this keypress arrives at a screen querying a
+      // database nobody can open.
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape, platform: 'windows');
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('dashboard.search')), findsOneWidget);
+      // The dashboard's own query, against whatever connection the firm is
+      // holding right now -- the one thing that tells a live connection from
+      // a closed one.
+      expect(
+        container.read(dashboardRowsProvider).hasError,
+        isFalse,
+        reason:
+            'the dashboard queried the connection the migration closed: '
+            '${container.read(dashboardRowsProvider).error}',
+      );
+      expect(container.read(firmMasterKeyProvider), isNotNull);
+      expect(
+        find.byKey(const Key('encryption.unlockScreen')),
+        findsNothing,
+        reason: 'the firm is unlocked in this session, not locked out of it',
+      );
     },
     variant: windowsOnly,
   );
@@ -541,6 +600,117 @@ void main() {
         await encryption.unlockWithRecoveryCode(testFirmId, newCode),
         isNotNull,
       );
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
+    'the rotation dialog will not close until the new code has been typed '
+    'back, and offers another one to anyone who cannot match it',
+    (tester) async {
+      final encryption = FakeEncryptionService();
+      encryption.encryptNow(testFirmId, passphrase: 'open up');
+      await pumpLedgerly(tester, seed: seed, encryption: encryption);
+      await type(tester, const Key('encryption.unlockPassphrase'), 'open up');
+      await tap(tester, const Key('encryption.unlock'));
+
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+      await tap(tester, const Key('encryption.rotateRecoveryCode'));
+      await type(tester, const Key('encryption.currentPassphrase'), 'open up');
+      await tap(tester, const Key('encryption.rotateRecoveryCodeSubmit'));
+      final firstCode = shownRecoveryCode(tester);
+
+      // Advisory, not a gate on the rotation -- the old code died the moment
+      // this returned. What it catches is a miscopy, here, rather than a year
+      // from now when this code is the only way in.
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.byKey(const Key('encryption.rotateRecoveryCodeDone')),
+            )
+            .onPressed,
+        isNull,
+      );
+      await type(
+        tester,
+        const Key('encryption.recoveryCodeConfirm'),
+        '${firstCode.substring(0, firstCode.length - 1)}X',
+      );
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.byKey(const Key('encryption.rotateRecoveryCodeDone')),
+            )
+            .onPressed,
+        isNull,
+      );
+
+      // The escape hatch: a rotation cannot be undone, so someone who cannot
+      // reproduce the code has to be able to get a different one.
+      await tap(tester, const Key('encryption.rotateRecoveryCodeAgain'));
+      final secondCode = shownRecoveryCode(tester);
+      expect(secondCode, isNot(firstCode));
+      expect(
+        tester
+            .widget<TextField>(
+              find.byKey(const Key('encryption.recoveryCodeConfirm')),
+            )
+            .controller!
+            .text,
+        isEmpty,
+        reason:
+            'what was typed against the previous code proves nothing '
+            'about this one',
+      );
+      expect(
+        await encryption.unlockWithRecoveryCode(testFirmId, firstCode),
+        isNull,
+      );
+
+      await type(
+        tester,
+        const Key('encryption.recoveryCodeConfirm'),
+        secondCode,
+      );
+      await tap(tester, const Key('encryption.rotateRecoveryCodeDone'));
+      expect(
+        find.byKey(const Key('encryption.rotateRecoveryCodeDialog')),
+        findsNothing,
+      );
+      expect(
+        await encryption.unlockWithRecoveryCode(testFirmId, secondCode),
+        isNotNull,
+      );
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
+    'the recovery code is shown with the firm it opens and the date it was '
+    'issued, so a hand-copied one is not interchangeable with another '
+    "firm's",
+    (tester) async {
+      final encryption = FakeEncryptionService();
+      await pumpLedgerly(tester, seed: seed, encryption: encryption);
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+      await tap(tester, const Key('encryption.enableSection'));
+      await type(tester, const Key('encryption.passphrase'), 'a passphrase');
+      await type(
+        tester,
+        const Key('encryption.passphraseConfirm'),
+        'a passphrase',
+      );
+      await tap(tester, const Key('encryption.generate'));
+
+      final identity = tester
+          .widget<SelectableText>(
+            find.byKey(const Key('encryption.recoveryCodeIdentity')),
+          )
+          .data!;
+      expect(identity, contains('Mill'));
+      expect(identity, contains('${DateTime.now().year}'));
+      // Nothing prints this code; the copy must not claim otherwise.
+      expect(find.textContaining('print it'), findsNothing);
     },
     variant: windowsOnly,
   );

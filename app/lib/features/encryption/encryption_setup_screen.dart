@@ -17,6 +17,17 @@ const kEncryptionWarning =
     'If you forget your passphrase and lose this recovery code, this '
     "firm's ledger cannot be recovered by anyone, including you or us.";
 
+/// What a hand-copied recovery code has to carry alongside it to be worth
+/// anything later: which firm it opens, and when it was issued. The app is
+/// explicitly multi-firm and a rotated code supersedes an older one, so a
+/// bare string of characters on a scrap of paper is ambiguous on both counts.
+String recoveryCodeIdentity(String firmName, DateTime generatedAt) {
+  String two(int n) => n.toString().padLeft(2, '0');
+  final d = generatedAt;
+  return '$firmName · generated '
+      '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
+}
+
 /// Something the person at the keyboard has to read and act on, as opposed to
 /// a programming error. Thrown by the enrolment callbacks below so the panel
 /// can print the message as written, without a `Bad state:` prefix in front
@@ -162,9 +173,16 @@ class EncryptionEnrolmentPanel extends StatefulWidget {
     required this.commit,
     required this.commitLabel,
     required this.codeShownMessage,
+    required this.firmName,
     this.compact = false,
     this.autofocus = false,
   });
+
+  /// Shown with the code itself. This app is explicitly multi-firm, and the
+  /// code is only ever copied out by hand: two firms' codes written on two
+  /// scraps of paper are otherwise indistinguishable, and the wrong one
+  /// against the wrong firm reads simply as "that code does not open this".
+  final String firmName;
 
   /// Enrols the firm and returns the recovery code to show. Throwing shows
   /// the message on the panel and leaves the user on step one.
@@ -196,6 +214,7 @@ class _EncryptionEnrolmentPanelState extends State<EncryptionEnrolmentPanel> {
   final _confirm = TextEditingController();
   final _typedBack = TextEditingController();
   String? _recoveryCode;
+  DateTime? _generatedAt;
   String? _error;
   bool _busy = false;
 
@@ -229,7 +248,12 @@ class _EncryptionEnrolmentPanelState extends State<EncryptionEnrolmentPanel> {
     });
     try {
       final code = await widget.generate(passphrase);
-      if (mounted) setState(() => _recoveryCode = code);
+      if (mounted) {
+        setState(() {
+          _recoveryCode = code;
+          _generatedAt = DateTime.now();
+        });
+      }
     } on Object catch (e) {
       if (mounted) setState(() => _error = '$e');
     } finally {
@@ -292,10 +316,21 @@ class _EncryptionEnrolmentPanelState extends State<EncryptionEnrolmentPanel> {
               color: c.accentSoft,
               borderRadius: BorderRadius.circular(4),
             ),
-            child: SelectableText(
-              code,
-              key: const Key('encryption.recoveryCode'),
-              style: numberStyle.copyWith(fontSize: 15, letterSpacing: 1),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SelectableText(
+                  code,
+                  key: const Key('encryption.recoveryCode'),
+                  style: numberStyle.copyWith(fontSize: 15, letterSpacing: 1),
+                ),
+                const SizedBox(height: 6),
+                SelectableText(
+                  recoveryCodeIdentity(widget.firmName, _generatedAt!),
+                  key: const Key('encryption.recoveryCodeIdentity'),
+                  style: TextStyle(fontSize: 12.5, color: c.ink2),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 12),
@@ -355,46 +390,78 @@ class _EncryptionSetupScreenState extends ConsumerState<EncryptionSetupScreen> {
   bool _done = false;
   String? _message;
 
+  /// Remembered rather than read at paint time: the firm's connection is
+  /// closed for the length of the migration, so the provider that knows its
+  /// name is briefly reloading exactly while the recovery code is on screen.
+  String? _firmName;
+
   Future<String> _migrate(String passphrase) async {
     final firm = ref.read(openFirmProvider).value;
     if (firm == null) {
       throw const EncryptionSetupFailure('No firm is open.');
     }
     final firmId = firm.ctx.firmId;
+    _firmName = firm.firmName;
     // sqlcipher_export rewrites the live file, so SQLite must not have it
     // open. If anything fails after this, reopening is what puts the app
     // back on its feet — the migration itself leaves the plaintext original
     // untouched until it has proved the encrypted copy good.
     await firm.db.close();
+    final String recoveryCode;
     try {
-      late String recoveryCode;
+      late String code;
       await ref
           .read(encryptionServiceProvider)
           .migrateToEncrypted(
             firmId,
             passphrase: passphrase,
-            onRecoveryCodeGenerated: (code) => recoveryCode = code,
+            onRecoveryCodeGenerated: (c) => code = c,
           );
-      return recoveryCode;
+      recoveryCode = code;
     } on Object {
       ref.invalidate(openFirmProvider);
       rethrow;
+    }
+    // The database on disk is ciphertext from this line on, and the
+    // connection this method closed is gone. Put the key into the session
+    // NOW rather than after the type-it-back step: this route lives inside
+    // the app shell, with a live navigation rail and a global Esc-to-
+    // dashboard shortcut, so "later, or never" means one keypress lands the
+    // user on a screen querying a closed connection. The type-back still
+    // gates the WIZARD — it has never gated whether the key works, since
+    // encryption was already on by the time the code was shown.
+    await _adoptSessionKey(passphrase);
+    return recoveryCode;
+  }
+
+  /// Puts the firm's key into this session, which re-runs the gate and
+  /// reopens the firm keyed. Never allowed to throw past its caller: it runs
+  /// at the one moment when the recovery code exists only on screen, and
+  /// losing that to a secondary failure would be far worse than opening the
+  /// firm a step late — [_commit] retries and reports.
+  Future<bool> _adoptSessionKey(String passphrase) async {
+    try {
+      final firmId = ref.read(globalPrefsProvider).lastFirmId!;
+      final masterKey = await ref
+          .read(encryptionServiceProvider)
+          .unlockWithPassphrase(firmId, passphrase);
+      if (masterKey == null) return false;
+      ref.read(firmMasterKeyProvider.notifier).state = masterKey;
+      return true;
+    } on Object {
+      return false;
     }
   }
 
   Future<void> _commit(String passphrase) async {
     final firmId = ref.read(globalPrefsProvider).lastFirmId!;
-    final masterKey = await ref
-        .read(encryptionServiceProvider)
-        .unlockWithPassphrase(firmId, passphrase);
-    if (masterKey == null) {
+    if (ref.read(firmMasterKeyProvider) == null &&
+        !await _adoptSessionKey(passphrase)) {
       throw const EncryptionSetupFailure(
         'The new passphrase did not unlock the firm. Use the recovery code '
         'shown above to get back in.',
       );
     }
-    // Setting the key re-runs the gate, which reopens the firm keyed.
-    ref.read(firmMasterKeyProvider.notifier).state = masterKey;
     final backups = ref.read(plaintextBackupCleanerProvider).find(firmId);
     if (mounted) {
       setState(() {
@@ -420,6 +487,7 @@ class _EncryptionSetupScreenState extends ConsumerState<EncryptionSetupScreen> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    _firmName ??= ref.watch(openFirmProvider).value?.firmName;
     return Padding(
       key: const Key('encryption.setupWizard'),
       padding: const EdgeInsets.fromLTRB(22, 18, 22, 18),
@@ -469,8 +537,10 @@ class _EncryptionSetupScreenState extends ConsumerState<EncryptionSetupScreen> {
                         'Encryption is now ON for this firm, and the '
                         'passphrase you just entered is what opens it. This '
                         'recovery code is the only other way in, it is shown '
-                        'once, and it is never shown again. Write it down or '
-                        'print it now, then type it back below.',
+                        'once, and it is never shown again. Write it down now, '
+                        'along with the firm and date under it, then type it '
+                        'back below.',
+                    firmName: _firmName ?? '',
                     commitLabel: "I've written it down — continue",
                     compact: compact,
                     autofocus: true,
@@ -680,15 +750,27 @@ class RotateRecoveryCodeDialog extends ConsumerStatefulWidget {
 class _RotateRecoveryCodeDialogState
     extends ConsumerState<RotateRecoveryCodeDialog> {
   final _current = TextEditingController();
+  final _typedBack = TextEditingController();
   bool _busy = false;
   String? _error;
   String? _newCode;
+  DateTime? _generatedAt;
 
   @override
   void dispose() {
     _current.dispose();
+    _typedBack.dispose();
     super.dispose();
   }
+
+  /// Advisory, not a gate on the rotation itself — the old code died the
+  /// instant [EncryptionService.rotateRecoveryCode] returned and there is no
+  /// undo. What this gates is the dialog's own Done button, so a miscopied
+  /// code is noticed here rather than a year later when it is the only way
+  /// into the firm. "Generate another" is the way out for someone who cannot
+  /// make it match: rotating again is always allowed.
+  bool get _typedBackMatches =>
+      _newCode != null && canonicaliseRecoveryCode(_typedBack.text) == _newCode;
 
   Future<void> _submit() async {
     setState(() {
@@ -728,6 +810,10 @@ class _RotateRecoveryCodeDialogState
       setState(() {
         _busy = false;
         _newCode = code;
+        _generatedAt = DateTime.now();
+        // A fresh code needs a fresh transcription: what was typed against
+        // the previous one proves nothing about this one.
+        _typedBack.clear();
       });
     }
   }
@@ -771,8 +857,8 @@ class _RotateRecoveryCodeDialogState
                 ]
               : [
                   Text(
-                    'Write this down or print it. It is shown once, and the '
-                    'old code no longer opens this firm.',
+                    'Write this down. It is shown once, and the old code no '
+                    'longer opens this firm.',
                     style: TextStyle(color: c.ink2),
                   ),
                   const SizedBox(height: 10),
@@ -783,15 +869,53 @@ class _RotateRecoveryCodeDialogState
                       color: c.accentSoft,
                       borderRadius: BorderRadius.circular(4),
                     ),
-                    child: SelectableText(
-                      code,
-                      key: const Key('encryption.recoveryCode'),
-                      style: numberStyle.copyWith(
-                        fontSize: 15,
-                        letterSpacing: 1,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SelectableText(
+                          code,
+                          key: const Key('encryption.recoveryCode'),
+                          style: numberStyle.copyWith(
+                            fontSize: 15,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        SelectableText(
+                          recoveryCodeIdentity(
+                            ref.watch(openFirmProvider).value?.firmName ?? '',
+                            _generatedAt!,
+                          ),
+                          key: const Key('encryption.recoveryCodeIdentity'),
+                          style: TextStyle(fontSize: 12.5, color: c.ink2),
+                        ),
+                      ],
                     ),
                   ),
+                  const SizedBox(height: 10),
+                  const Text('Type it back'),
+                  TextField(
+                    key: const Key('encryption.recoveryCodeConfirm'),
+                    controller: _typedBack,
+                    style: numberStyle.copyWith(fontSize: 14),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Typing it back only checks your copy is legible — the '
+                    'rotation has already happened. If you cannot make it '
+                    'match, generate another and copy that one instead.',
+                    style: TextStyle(color: c.ink2, fontSize: 12.5),
+                  ),
+                  if (_error case final e?)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Text(
+                        e,
+                        key: const Key('encryption.passphraseError'),
+                        style: TextStyle(color: c.giveable),
+                      ),
+                    ),
                 ],
         ),
       ),
@@ -809,9 +933,20 @@ class _RotateRecoveryCodeDialogState
               ),
             ]
           : [
+              // The escape hatch that makes the type-back check safe to
+              // impose at all: there is no undo for a rotation, so a user who
+              // cannot reproduce the code must be able to get a different one
+              // rather than be held at a dialog they cannot satisfy.
+              TextButton(
+                key: const Key('encryption.rotateRecoveryCodeAgain'),
+                onPressed: _busy ? null : _submit,
+                child: const Text('Generate another'),
+              ),
               FilledButton(
                 key: const Key('encryption.rotateRecoveryCodeDone'),
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: _busy || !_typedBackMatches
+                    ? null
+                    : () => Navigator.of(context).pop(),
                 child: const Text('I have written it down'),
               ),
             ],
