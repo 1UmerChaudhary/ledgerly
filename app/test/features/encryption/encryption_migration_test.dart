@@ -44,9 +44,8 @@ void main() {
   File keptPlaintext() => File('${live().path}.pre-encryption');
 
   bool isCiphertext(File file) =>
-      !String.fromCharCodes(
-        file.readAsBytesSync().sublist(0, 16),
-      ).startsWith('SQLite format 3');
+      !String.fromCharCodes(file.readAsBytesSync().sublist(0, 16))
+          .startsWith('SQLite format 3');
 
   /// A real, plaintext firm database of the shape an existing customer already
   /// has on disk: the full drift schema plus rows in several tables. Closed
@@ -154,10 +153,7 @@ void main() {
     expect(pendingEnvelope().existsSync(), isTrue);
     expect(keptPlaintext().existsSync(), isTrue);
     expect(isCiphertext(keptPlaintext()), isFalse);
-    final unkeyed = raw.sqlite3.open(
-      live().path,
-      mode: raw.OpenMode.readOnly,
-    );
+    final unkeyed = raw.sqlite3.open(live().path, mode: raw.OpenMode.readOnly);
     expect(() => unkeyed.select('PRAGMA quick_check'), throwsA(anything));
     unkeyed.close();
 
@@ -171,6 +167,36 @@ void main() {
     final probe = openKeyed(live(), key!);
     expect(probe.select('SELECT count(*) AS c FROM customers').first['c'], 2);
     probe.close();
+
+    // Recovery must NOT have retired the plaintext copy. It has no key, so all
+    // it can say about the live file is "this looks like ciphertext" -- never
+    // "this decrypts to the same data". Deleting the last plaintext copy of a
+    // ledger on that weaker claim is exactly what must not happen.
+    expect(keptPlaintext().existsSync(), isTrue);
+    expect(isCiphertext(keptPlaintext()), isFalse);
+
+    // Whoever holds the key finishes the job -- Task 7's unlock flow, here
+    // the unlock above.
+    await service.retirePreEncryptionCopy(firmId, key);
+    expect(keptPlaintext().existsSync(), isFalse);
+    // And it is a no-op the second time, so any caller may call it freely.
+    await service.retirePreEncryptionCopy(firmId, key);
+    expect(keptPlaintext().existsSync(), isFalse);
+  });
+
+  test('recovery neither promotes nor drops when it cannot read the live '
+      'file header', () async {
+    await seedPlaintextFirm();
+    pendingEnvelope().writeAsStringSync('{}');
+    // A live file too short to hold a header: nothing can prove whether the
+    // swap happened, so nothing may act on either assumption.
+    live().writeAsBytesSync(Uint8List.fromList([1, 2, 3]));
+
+    await service.recoverInterruptedMigration(firmId);
+
+    expect(await service.isEncrypted(firmId), isFalse);
+    expect(envelope().existsSync(), isFalse);
+    expect(pendingEnvelope().existsSync(), isTrue);
   });
 
   test('a retry after an interrupted migration heals it first, then refuses '
@@ -187,6 +213,11 @@ void main() {
       throwsA(isA<FormatException>()),
     );
 
+    // A journal left beside the live path belongs to the plaintext database
+    // the swap replaced; the promotion branch has to sweep it just as the
+    // crash-free path does.
+    final shm = File('${live().path}-shm')..writeAsStringSync('stale');
+
     service.afterDatabaseSwapHook = null;
     await expectLater(
       service.migrateToEncrypted(
@@ -194,8 +225,15 @@ void main() {
         passphrase: passphrase,
         onRecoveryCodeGenerated: (_) {},
       ),
-      throwsA(isA<StateError>()),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('already encrypted'),
+        ),
+      ),
     );
+    expect(shm.existsSync(), isFalse);
     expect(await service.isEncrypted(firmId), isTrue);
     final key = await service.unlockWithPassphrase(firmId, passphrase);
     final probe = openKeyed(live(), key!);
@@ -255,7 +293,13 @@ void main() {
         passphrase: passphrase,
         onRecoveryCodeGenerated: (_) => fail('must not reach the envelope'),
       ),
-      throwsA(isA<StateError>()),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('journal mode'),
+        ),
+      ),
     );
 
     expect(live().readAsBytesSync(), walBytes);
@@ -285,7 +329,13 @@ void main() {
         passphrase: passphrase,
         onRecoveryCodeGenerated: (_) {},
       ),
-      throwsA(isA<StateError>()),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('no database file'),
+        ),
+      ),
     );
     expect(live().existsSync(), isFalse);
   });

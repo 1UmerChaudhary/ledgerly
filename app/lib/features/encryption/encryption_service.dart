@@ -161,9 +161,7 @@ class EncryptionService {
     if (tmpEncrypted.existsSync()) tmpEncrypted.deleteSync();
 
     final masterKey = _randomBytes(32);
-    final keyHex = masterKey
-        .map((b) => b.toRadixString(16).padLeft(2, '0'))
-        .join();
+    final keyHex = _hex(masterKey);
     try {
       _exportEncryptedCopy(from: liveFile, to: tmpEncrypted, keyHex: keyHex);
       _verifyEncryptedCopy(
@@ -182,8 +180,7 @@ class EncryptionService {
     // replace; it is the fallback for every step from here on, and is retired
     // at the end of this method once the live encrypted file has been read
     // back successfully.
-    final keptPlaintext = File('${liveFile.path}.pre-encryption');
-    await liveFile.copy(keptPlaintext.path);
+    await liveFile.copy(_preEncryptionFile(firmId).path);
 
     final pendingEnvelope = _pendingEnvelopeFile(firmId);
     final recoveryCode = await _writeEnvelopeTo(
@@ -201,20 +198,49 @@ class EncryptionService {
     await afterDatabaseSwapHook?.call();
     await pendingEnvelope.rename(paths.firmKeyEnvelope(firmId).path);
 
-    // Read the file that is now live -- not the scratch file that was verified
-    // before the rename -- back through the key, against the plaintext copy.
-    // Only a clean read retires the last plaintext copy of the ledger; leaving
-    // one on disk would undo the point of encrypting at all.
-    _verifyEncryptedCopy(
-      plaintext: keptPlaintext,
-      encrypted: liveFile,
-      keyHex: keyHex,
-    );
-    keptPlaintext.deleteSync();
+    // Retire the last plaintext copy of the ledger -- but only after reading
+    // the file that is now live, not the scratch file verified before the
+    // rename, back through the key. Same method the keyless crash-recovery
+    // path has to leave for Task 7's unlock flow to call.
+    await retirePreEncryptionCopy(firmId, masterKey);
 
     // Last, so that a caller whose callback throws cannot strand the plaintext
     // sidecar that the two lines above exist to remove.
     onRecoveryCodeGenerated(recoveryCode);
+  }
+
+  /// Reads the database that is now live back through [masterKey], checks it
+  /// against the `.pre-encryption` plaintext copy kept beside it -- cipher
+  /// integrity, SQL integrity, schema, drift's schema version and a row count
+  /// per table -- and only then deletes that copy. A no-op when there is
+  /// nothing to retire, so it is safe to call on any firm at any time.
+  ///
+  /// Public because [recoverInterruptedMigration] **cannot** do this. Recovery
+  /// is keyless by construction -- the key it is promoting is inside the very
+  /// envelope in question -- and a file-header check only ever proves "this
+  /// looks like ciphertext", never "this decrypts to the same data as the
+  /// original". Retiring the last plaintext copy of a firm's ledger on the
+  /// strength of the weaker claim is exactly the compromise the rest of this
+  /// file exists to avoid.
+  ///
+  /// The consequence is a real, tracked follow-up: a firm whose migration
+  /// crashed between the swap and the promotion, and was then auto-recovered,
+  /// still has a complete plaintext copy of its ledger on disk. **Task 7's
+  /// unlock/open flow MUST call `retirePreEncryptionCopy(firmId, masterKey)`
+  /// after a successful unlock**, which is the first moment anything in the
+  /// app holds the key needed to finish the job.
+  Future<void> retirePreEncryptionCopy(
+    String firmId,
+    Uint8List masterKey,
+  ) async {
+    final keptPlaintext = _preEncryptionFile(firmId);
+    if (!keptPlaintext.existsSync()) return;
+    _verifyEncryptedCopy(
+      plaintext: keptPlaintext,
+      encrypted: paths.firmDatabase(firmId),
+      keyHex: _hex(masterKey),
+    );
+    keptPlaintext.deleteSync();
   }
 
   /// Repairs a [migrateToEncrypted] that died between the database swap and
@@ -223,7 +249,9 @@ class EncryptionService {
   /// It cannot read the database to decide (the key is inside the very
   /// envelope in question), so it reads the file header instead: SQLCipher
   /// encrypts page 1 whole, including SQLite's magic string, so finding that
-  /// string is a reliable "this file is still plaintext".
+  /// string is a reliable "this file is still plaintext". It deliberately does
+  /// NOT retire the `.pre-encryption` copy -- see [retirePreEncryptionCopy]
+  /// for why, and for whose job that is.
   ///
   /// [migrateToEncrypted] calls this itself before doing anything. Task 7's
   /// open/unlock flow should call it at firm-open time too, as defence in
@@ -234,23 +262,32 @@ class EncryptionService {
     final liveFile = paths.firmDatabase(firmId);
     if (pendingEnvelope.existsSync()) {
       final envelope = paths.firmKeyEnvelope(firmId);
-      if (!envelope.existsSync() &&
-          liveFile.existsSync() &&
-          !_isPlaintextSqlite(liveFile)) {
+      // No database at all means the swap certainly did not happen.
+      final isPlaintext = liveFile.existsSync()
+          ? _isPlaintextSqlite(liveFile)
+          : true;
+      if (envelope.existsSync() || isPlaintext == true) {
+        // Either a real envelope already won, or the swap never happened and
+        // this staged key wraps a database that is not there. Drop it and
+        // leave the firm as the plaintext, unencrypted firm it still is.
+        pendingEnvelope.deleteSync();
+      } else if (isPlaintext == false) {
         // The swap happened: this staged envelope holds the only wrapped copy
         // of the key for the file now on disk. Finish what was interrupted.
         await pendingEnvelope.rename(envelope.path);
-      } else {
-        // The swap never happened (or a real envelope is already in place), so
-        // the staged key wraps a database that is not there. Drop it and leave
-        // the firm as the plaintext, unencrypted firm it still is.
-        pendingEnvelope.deleteSync();
+        _deleteJournalSidecars(liveFile);
       }
+      // isPlaintext == null: the header could not be read, so neither case is
+      // proved. Promoting would mark the firm encrypted over a file nothing
+      // has vouched for; dropping would destroy the only wrapped copy of a key
+      // that might belong to it. Touch neither, and let a retry -- which
+      // re-stages its own envelope -- or a human settle it.
     }
     for (final leftover in [
       File('${pendingEnvelope.path}.tmp'),
       File('${liveFile.path}.encrypting.tmp'),
     ]) {
+      _deleteJournalSidecars(leftover);
       if (leftover.existsSync()) leftover.deleteSync();
     }
   }
@@ -258,16 +295,34 @@ class EncryptionService {
   File _pendingEnvelopeFile(String firmId) =>
       File('${paths.firmKeyEnvelope(firmId).path}.pending');
 
-  /// Reads only the 16-byte header, never the whole (potentially large) file.
-  static bool _isPlaintextSqlite(File file) {
-    final handle = file.openSync();
+  File _preEncryptionFile(String firmId) =>
+      File('${paths.firmDatabase(firmId).path}.pre-encryption');
+
+  static String _hex(List<int> bytes) =>
+      bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+
+  /// True when [file] starts with SQLite's plaintext magic, false when it
+  /// definitely does not, and **null when the answer cannot be established**
+  /// -- a truncated header, an unreadable file. Reads only those 16 bytes,
+  /// never the whole (potentially large) database.
+  ///
+  /// The three-way answer is the point: the caller promotes an envelope on
+  /// `false`, and promoting over a file it could not read would mark a firm
+  /// encrypted on no evidence at all.
+  static bool? _isPlaintextSqlite(File file) {
     try {
-      final header = handle.readSync(16);
-      return header.length == 16 &&
-          String.fromCharCodes(header.sublist(0, 15)) == 'SQLite format 3' &&
-          header[15] == 0;
-    } finally {
-      handle.closeSync();
+      final handle = file.openSync();
+      try {
+        final header = handle.readSync(16);
+        if (header.length < 16) return null;
+        return String.fromCharCodes(header.sublist(0, 15)) ==
+                'SQLite format 3' &&
+            header[15] == 0;
+      } finally {
+        handle.closeSync();
+      }
+    } on FileSystemException {
+      return null;
     }
   }
 
