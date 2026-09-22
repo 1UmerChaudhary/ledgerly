@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -75,25 +76,38 @@ void main() {
     expect(backedUpEnvelope.byPassphrase.cipherText, envelopeA.byPassphrase.cipherText);
   });
 
-  test('a crash during write leaves old envelope readable', () async {
+  test('a crash between backup and final rename leaves old envelope readable', () async {
     final store = KeyEnvelopeStore(File('${tmp.path}/firm.key.json'));
     final envelopeA = makeEnvelope(variant: 1);
     final envelopeB = makeEnvelope(variant: 2);
+    final envelopeC = makeEnvelope(variant: 3);
 
-    // Write the first envelope
+    // Real write 1: creates canonical file with envelopeA
     await store.write(envelopeA);
 
-    // Simulate a crash mid-write by manually creating a .tmp file
-    // (representing a write that got partway through before crashing)
-    // while leaving the original path file intact
+    // Simulate the exact intermediate state that exists between step 2 (copy to .bak)
+    // and step 3 (rename .tmp to path) of a second write: a .tmp file holds the new
+    // envelope's JSON, but hasn't been renamed into place yet. The canonical path
+    // still holds the old envelope (never touched by copy-based backup).
     final tmpFile = File('${tmp.path}/firm.key.json.tmp');
-    await tmpFile.writeAsString('{"incomplete": "json"');
+    await tmpFile.writeAsString(
+      jsonEncode(envelopeB.toJson()),
+      flush: true,
+    );
 
-    // read() should still return the old, intact envelope at path, not null
+    // read() should still return envelopeA from the canonical file,
+    // NOT null, because path was never moved or deleted by the backup step
     final readBack = await store.read();
     expect(readBack, isNotNull);
     expect(readBack!.byPassphrase.nonce, envelopeA.byPassphrase.nonce);
     expect(readBack.byPassphrase.cipherText, envelopeA.byPassphrase.cipherText);
     expect(readBack.byPassphrase.mac, envelopeA.byPassphrase.mac);
+
+    // Bonus: a subsequent real write should complete normally despite the stray .tmp,
+    // proving that leftover .tmp from a previous crash doesn't wedge future writes
+    await store.write(envelopeC);
+    final readAfterRecover = await store.read();
+    expect(readAfterRecover, isNotNull);
+    expect(readAfterRecover!.byPassphrase.nonce, envelopeC.byPassphrase.nonce);
   });
 }
