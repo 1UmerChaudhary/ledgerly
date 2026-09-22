@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:ledgerly_core/ledgerly_core.dart';
+import 'package:meta/meta.dart';
 
 /// Both wrapped copies of a firm's master key, plus the salts needed to
 /// re-derive each wrapping key at unlock time. This is the entire content of
@@ -56,6 +57,12 @@ class KeyEnvelopeStore {
   KeyEnvelopeStore(this.path);
   final File path;
 
+  /// Test-only hook: fires after the backup copy completes and before the
+  /// final atomic rename, letting a test observe filesystem state at
+  /// exactly the crash boundary during a real write(). No-op in production.
+  @visibleForTesting
+  Future<void> Function()? afterBackupHook;
+
   Future<KeyEnvelope?> read() async {
     if (!await path.exists()) return null;
     final text = await path.readAsString();
@@ -75,6 +82,7 @@ class KeyEnvelopeStore {
     if (await path.exists()) {
       await path.copy(backup.path);
     }
+    await afterBackupHook?.call();
     await tmp.rename(path.path);
   }
 }

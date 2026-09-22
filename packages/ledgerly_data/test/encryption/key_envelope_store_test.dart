@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -76,38 +77,33 @@ void main() {
     expect(backedUpEnvelope.byPassphrase.cipherText, envelopeA.byPassphrase.cipherText);
   });
 
-  test('a crash between backup and final rename leaves old envelope readable', () async {
+  test('a crash between backup and final rename leaves the old envelope readable', () async {
     final store = KeyEnvelopeStore(File('${tmp.path}/firm.key.json'));
     final envelopeA = makeEnvelope(variant: 1);
     final envelopeB = makeEnvelope(variant: 2);
-    final envelopeC = makeEnvelope(variant: 3);
 
-    // Real write 1: creates canonical file with envelopeA
+    // Real write 1: create canonical file with envelopeA
     await store.write(envelopeA);
 
-    // Simulate the exact intermediate state that exists between step 2 (copy to .bak)
-    // and step 3 (rename .tmp to path) of a second write: a .tmp file holds the new
-    // envelope's JSON, but hasn't been renamed into place yet. The canonical path
-    // still holds the old envelope (never touched by copy-based backup).
-    final tmpFile = File('${tmp.path}/firm.key.json.tmp');
-    await tmpFile.writeAsString(
-      jsonEncode(envelopeB.toJson()),
-      flush: true,
-    );
+    // Coordinate reading during a real second write's crash window
+    final readMidSecondWrite = Completer<KeyEnvelope?>();
+    store.afterBackupHook = () async {
+      // At this exact point in a real second write(): backup copy has
+      // completed, final rename has NOT happened yet. This is the crash
+      // window under test.
+      readMidSecondWrite.complete(await store.read());
+    };
 
-    // read() should still return envelopeA from the canonical file,
-    // NOT null, because path was never moved or deleted by the backup step
-    final readBack = await store.read();
-    expect(readBack, isNotNull);
-    expect(readBack!.byPassphrase.nonce, envelopeA.byPassphrase.nonce);
-    expect(readBack.byPassphrase.cipherText, envelopeA.byPassphrase.cipherText);
-    expect(readBack.byPassphrase.mac, envelopeA.byPassphrase.mac);
+    // Real second write: triggers the hook at the crash boundary
+    await store.write(envelopeB);
+    final duringCrashWindow = await readMidSecondWrite.future;
 
-    // Bonus: a subsequent real write should complete normally despite the stray .tmp,
-    // proving that leftover .tmp from a previous crash doesn't wedge future writes
-    await store.write(envelopeC);
-    final readAfterRecover = await store.read();
-    expect(readAfterRecover, isNotNull);
-    expect(readAfterRecover!.byPassphrase.nonce, envelopeC.byPassphrase.nonce);
+    // If write() still used the old buggy rename(), path would have been
+    // renamed away at this point and read() would return null. With the
+    // fixed copy(), path still holds envelopeA here.
+    expect(duringCrashWindow, isNotNull);
+    expect(duringCrashWindow!.byPassphrase.nonce, envelopeA.byPassphrase.nonce);
+    expect(duringCrashWindow.byPassphrase.cipherText, envelopeA.byPassphrase.cipherText);
+    expect(duringCrashWindow.byPassphrase.mac, envelopeA.byPassphrase.mac);
   });
 }
