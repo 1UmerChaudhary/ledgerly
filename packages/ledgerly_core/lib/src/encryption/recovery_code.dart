@@ -3,7 +3,7 @@ import 'dart:typed_data';
 // Crockford's base32 alphabet -- deliberately excludes I, L, O, U to avoid
 // visual confusion with 1, 1, 0, V on a printed or handwritten sheet.
 const _alphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-// The check-symbol alphabet extends the above with 7 more symbols, per
+// The check-symbol alphabet extends the above with 5 more symbols, per
 // Crockford's spec, giving a mod-37 check digit.
 const _checkAlphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ*~\$=U';
 
