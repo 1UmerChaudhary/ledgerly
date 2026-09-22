@@ -77,7 +77,7 @@ class EncryptionService {
         envelope.byPassphrase,
         wrappingKeyBytes: wrappingKey,
       );
-    } catch (_) {
+    } on SecretBoxAuthenticationError catch (_) {
       return null; // wrong passphrase -- fail closed, not an exception the caller must catch
     }
   }
@@ -100,7 +100,7 @@ class EncryptionService {
         envelope.byRecoveryCode,
         wrappingKeyBytes: wrappingKey,
       );
-    } catch (_) {
+    } on SecretBoxAuthenticationError catch (_) {
       return null;
     }
   }

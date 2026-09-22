@@ -2,6 +2,14 @@ import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 
+// Re-exported so callers of [unwrapKey] can narrow a catch clause to the
+// documented wrong-key failure mode without importing `package:cryptography`
+// directly -- that import stays contained to this one file for everything
+// else (see [WrappedKey]'s doc comment below), but the exception type itself
+// is part of this file's public contract: "throws on a wrong key" is only
+// useful to a caller if they can name what it throws.
+export 'package:cryptography/cryptography.dart' show SecretBoxAuthenticationError;
+
 /// One AES-GCM-wrapped copy of a key. Structurally identical to
 /// [SecretBox]'s three fields -- this exists so callers of this file never
 /// import `package:cryptography` directly, keeping the crypto dependency
