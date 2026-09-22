@@ -203,8 +203,10 @@ void main() {
     await pumpLedgerly(
       tester,
       seed: (db, ctx) async {
-        await FirmSetup(db, ctx)
-            .createFirm(name: 'Test Firm', contactNumber: '0300');
+        await FirmSetup(
+          db,
+          ctx,
+        ).createFirm(name: 'Test Firm', contactNumber: '0300');
       },
       viewSize: const Size(390, 844),
     );
@@ -213,13 +215,39 @@ void main() {
   }, variant: phoneOnly);
 
   testWidgets(
+    'at phone width, the empty-dashboard message drops the Ctrl+N hint a '
+    'touch-only device can never send',
+    (tester) async {
+      await pumpLedgerly(
+        tester,
+        seed: (db, ctx) async {
+          await FirmSetup(
+            db,
+            ctx,
+          ).createFirm(name: 'Test Firm', contactNumber: '0300');
+        },
+        viewSize: const Size(390, 844),
+      );
+
+      expect(find.text('No customers yet.'), findsOneWidget);
+      expect(
+        find.text('No customers yet. Press Ctrl+N to record the first sale.'),
+        findsNothing,
+      );
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
     'dashboard balance panel header does not overflow at phone width with a large balance',
     (tester) async {
       await pumpLedgerly(
         tester,
         seed: (db, ctx) async {
-          await FirmSetup(db, ctx)
-              .createFirm(name: 'Test Firm', contactNumber: '0300');
+          await FirmSetup(
+            db,
+            ctx,
+          ).createFirm(name: 'Test Firm', contactNumber: '0300');
           final customers = CustomersRepository(db, ctx);
           final bills = BillsRepository(db, ctx);
           final rashid = await customers.create(name: 'Rashid Traders');
@@ -245,56 +273,66 @@ void main() {
     tester,
   ) async {
     final seed = (AppDatabase db, DeviceContext ctx) async {
-      await FirmSetup(db, ctx)
-          .createFirm(name: 'Test Firm', contactNumber: '0300');
+      await FirmSetup(
+        db,
+        ctx,
+      ).createFirm(name: 'Test Firm', contactNumber: '0300');
     };
     await pumpLedgerly(tester, seed: seed); // default desktop size
 
     expect(find.byKey(const Key('shell.bottomNav')), findsNothing);
   }, variant: windowsOnly);
 
-  testWidgets('a drill-down route at phone width shows a back button, not the bottom nav', (
-    tester,
-  ) async {
-    final container = await pumpLedgerly(
-      tester,
-      seed: (db, ctx) async {
-        await FirmSetup(db, ctx)
-            .createFirm(name: 'Test Firm', contactNumber: '0300');
-      },
-      viewSize: const Size(412, 844),
-    );
-    // Navigate to items new (a drill-down route, not a top-level destination)
-    container.read(routerProvider).go('/items/new');
-    await tester.pumpAndSettle();
+  testWidgets(
+    'a drill-down route at phone width shows a back button, not the bottom nav',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: (db, ctx) async {
+          await FirmSetup(
+            db,
+            ctx,
+          ).createFirm(name: 'Test Firm', contactNumber: '0300');
+        },
+        viewSize: const Size(412, 844),
+      );
+      // Navigate to items new (a drill-down route, not a top-level destination)
+      container.read(routerProvider).go('/items/new');
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('shell.backButton')), findsOneWidget);
-    expect(find.byKey(const Key('shell.bottomNav')), findsNothing);
-  }, variant: phoneOnly);
+      expect(find.byKey(const Key('shell.backButton')), findsOneWidget);
+      expect(find.byKey(const Key('shell.bottomNav')), findsNothing);
+    },
+    variant: phoneOnly,
+  );
 
-  testWidgets('at phone width, the customers tab FAB opens the new-customer form', (
-    tester,
-  ) async {
-    final container = await pumpLedgerly(
-      tester,
-      seed: (db, ctx) async {
-        await FirmSetup(db, ctx)
-            .createFirm(name: 'Test Firm', contactNumber: '0300');
-      },
-      viewSize: const Size(390, 844),
-    );
-    container.read(routerProvider).go('/customers');
-    await tester.pumpAndSettle();
+  testWidgets(
+    'at phone width, the customers tab FAB opens the new-customer form',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: (db, ctx) async {
+          await FirmSetup(
+            db,
+            ctx,
+          ).createFirm(name: 'Test Firm', contactNumber: '0300');
+        },
+        viewSize: const Size(390, 844),
+      );
+      container.read(routerProvider).go('/customers');
+      await tester.pumpAndSettle();
 
-    // customers_screen.dart's header overflow at phone width was fixed
-    // separately (customers_items_test.dart) -- no exception expected here.
-    expect(tester.takeException(), isNull);
-    expect(find.byKey(const Key('shell.fab.addCustomer')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('shell.fab.addCustomer')));
-    await tester.pumpAndSettle();
+      // customers_screen.dart's header overflow at phone width was fixed
+      // separately (customers_items_test.dart) -- no exception expected here.
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('shell.fab.addCustomer')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('shell.fab.addCustomer')));
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('customer.form')), findsOneWidget);
-  }, variant: phoneOnly);
+      expect(find.byKey(const Key('customer.form')), findsOneWidget);
+    },
+    variant: phoneOnly,
+  );
 
   testWidgets('at phone width, the items tab FAB opens the new-item form', (
     tester,
@@ -302,8 +340,10 @@ void main() {
     final container = await pumpLedgerly(
       tester,
       seed: (db, ctx) async {
-        await FirmSetup(db, ctx)
-            .createFirm(name: 'Test Firm', contactNumber: '0300');
+        await FirmSetup(
+          db,
+          ctx,
+        ).createFirm(name: 'Test Firm', contactNumber: '0300');
       },
       viewSize: const Size(390, 844),
     );
@@ -325,8 +365,10 @@ void main() {
     final container = await pumpLedgerly(
       tester,
       seed: (db, ctx) async {
-        await FirmSetup(db, ctx)
-            .createFirm(name: 'Test Firm', contactNumber: '0300');
+        await FirmSetup(
+          db,
+          ctx,
+        ).createFirm(name: 'Test Firm', contactNumber: '0300');
       },
       viewSize: const Size(390, 844),
     );
@@ -345,8 +387,10 @@ void main() {
       final container = await pumpLedgerly(
         tester,
         seed: (db, ctx) async {
-          await FirmSetup(db, ctx)
-              .createFirm(name: 'Test Firm', contactNumber: '0300');
+          await FirmSetup(
+            db,
+            ctx,
+          ).createFirm(name: 'Test Firm', contactNumber: '0300');
         },
         viewSize: const Size(390, 844),
       );
@@ -382,8 +426,10 @@ void main() {
       final container = await pumpLedgerly(
         tester,
         seed: (db, ctx) async {
-          await FirmSetup(db, ctx)
-              .createFirm(name: 'Test Firm', contactNumber: '0300');
+          await FirmSetup(
+            db,
+            ctx,
+          ).createFirm(name: 'Test Firm', contactNumber: '0300');
         },
         viewSize: const Size(390, 844),
       );
@@ -411,8 +457,10 @@ void main() {
       await pumpLedgerly(
         tester,
         seed: (db, ctx) async {
-          await FirmSetup(db, ctx)
-              .createFirm(name: 'Test Firm', contactNumber: '0300');
+          await FirmSetup(
+            db,
+            ctx,
+          ).createFirm(name: 'Test Firm', contactNumber: '0300');
           final customer = await CustomersRepository(
             db,
             ctx,

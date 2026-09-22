@@ -54,13 +54,25 @@ Future<void> printSlip(WidgetRef ref, OpenFirm firm, String billId) async {
       } finally {
         // Every exit — the success return, a clean refusal, or a throw —
         // releases the socket. Skipping it on the throw path left the
-        // Bluetooth connection open with nothing holding a reference.
-        await service.disconnect();
+        // Bluetooth connection open with nothing holding a reference. A
+        // disconnect failure here is caught and ignored rather than
+        // propagated: letting it replace the success path's pending return
+        // would fall through to the PDF path below and print the same slip
+        // a second time, even though the Bluetooth print already succeeded.
+        try {
+          await service.disconnect();
+        } on Object {
+          // Not actionable — the print already happened (or the connect/
+          // write branch above already handles its own failure) — and
+          // there is nothing left holding a reference to disconnect again.
+        }
       }
-    } on Exception {
+    } on Object {
       // Deliberately swallowed: the PDF path below is the fallback the spec
       // asks for. Propagating here would leave a button's onPressed with an
-      // unhandled async error — no print, no fallback, no message.
+      // unhandled async error — no print, no fallback, no message. Catches
+      // Object (not just Exception) because the plugin's channel can also
+      // surface a bare Error on a malformed response.
     }
   }
   final bytes = await buildSlipPdf(slip);

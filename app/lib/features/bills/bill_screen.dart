@@ -102,7 +102,15 @@ class _BillScreenState extends ConsumerState<BillScreen> {
       return;
     }
     if (!d.dirty) {
-      context.go('/');
+      // Editing an existing bill (opened from its customer's ledger) with
+      // no changes made should land back where the user came from, not the
+      // dashboard -- a walk-in cash sale (no customer) has no ledger to
+      // return to either, so that case still falls back to '/'.
+      context.go(
+        d.editing?.customerId != null
+            ? '/customers/${d.editing!.customerId}'
+            : '/',
+      );
       return;
     }
     final discard = await showDialog<bool>(

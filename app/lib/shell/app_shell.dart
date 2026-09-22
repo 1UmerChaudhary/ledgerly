@@ -79,6 +79,11 @@ bool isTopLevelRoute(String location) {
   return topLevel.contains(location);
 }
 
+/// [_Rail]'s fixed width. Named here (not just inline on [_Rail]) because
+/// [AppShell]'s own compact decision needs to know it too -- see the comment
+/// there.
+const double _railWidth = 96;
+
 /// The frame every firm screen sits in: title bar, navigation rail with the
 /// shortcut letter on each entry, the content, and the key-hint bar that
 /// teaches the shortcuts by always showing what the keyboard can do right now.
@@ -136,7 +141,34 @@ class AppShell extends ConsumerWidget {
         autofocus: false,
         child: LayoutBuilder(
           builder: (context, constraints) {
+            // This LayoutBuilder is the outermost one in the app, so
+            // constraints.maxWidth here already is the full window width --
+            // the same number MediaQuery would give. Rail-vs-bottom-nav
+            // still keys off that full width unchanged: it's the decision
+            // that determines how much width the child screen below gets,
+            // so it has to come first.
             final compact = constraints.maxWidth < kCompactBreakpoint;
+            // The child's own LayoutBuilder never sees this width -- when
+            // the rail renders, the child gets constraints.maxWidth minus
+            // _railWidth, which is what every screen (customers, items,
+            // ledger, the bill/customer/item forms) actually measures
+            // itself against. A window in
+            // [kCompactBreakpoint, kCompactBreakpoint+_railWidth) fell in
+            // the gap: the shell measured "not compact" against the full
+            // width (rail shown, no back button), while the screen measured
+            // "compact" against its post-rail width and rendered its
+            // phone-only push/back navigation -- stranding the user with no
+            // way back (confirmed at 640dp; a screen's own kCompactBreakpoint
+            // check already carries this same "600-699dp band" comment).
+            // childCompact mirrors that same post-rail arithmetic so the
+            // back button appears exactly when the screen it's guarding
+            // needs one, without changing whether the rail itself renders
+            // (changing that instead pushed the *desktop* two-pane layout
+            // into a ~544dp space it was never designed to fit, and
+            // overflowed).
+            final childCompact = compact
+                ? true
+                : constraints.maxWidth - _railWidth < kCompactBreakpoint;
             return PopScope(
               // At a top-level route there's nowhere sensible to "go back"
               // to, so the system back gesture keeps its normal behaviour
@@ -162,7 +194,8 @@ class AppShell extends ConsumerWidget {
                             settings?.name ?? firm?.firmName ?? l10n.appName,
                         deviceCode: firm?.ctx.deviceShortCode,
                         backup: backup,
-                        showBackButton: compact && !isTopLevelRoute(location),
+                        showBackButton:
+                            childCompact && !isTopLevelRoute(location),
                       ),
                       Expanded(
                         child: compact
@@ -373,7 +406,7 @@ class _Rail extends StatelessWidget {
       (',', l10n.navSettings, '/settings'),
     ];
     return Container(
-      width: 96,
+      width: _railWidth,
       padding: const EdgeInsets.fromLTRB(8, 12, 8, 12),
       decoration: BoxDecoration(
         color: c.surface,

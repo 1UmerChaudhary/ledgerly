@@ -15,10 +15,6 @@ Future<void> seedMill(AppDatabase db, DeviceContext ctx) async {
   await CustomersRepository(db, ctx).create(name: 'Rashid Traders');
 }
 
-// Same customer, short firm name -- "Al-Madina Oil Mills" trips an unrelated,
-// pre-existing app_shell.dart title-bar overflow at phone width (same class
-// of bug bill_form_test.dart's seedFirmOnly comment describes for the
-// dashboard), which would otherwise contaminate the phoneOnly tests below.
 Future<void> seedMillPhone(AppDatabase db, DeviceContext ctx) async {
   await FirmSetup(db, ctx).createFirm(name: 'Mill', contactNumber: '0300');
   await CustomersRepository(db, ctx).create(name: 'Rashid Traders');
@@ -210,6 +206,48 @@ void main() {
       expect(printing.printedJobs.length, 1);
     },
     variant: windowsOnly,
+  );
+
+  testWidgets(
+    'a disconnect that throws after a successful write does not print twice',
+    (tester) async {
+      // disconnect() lives in printSlip's finally block, downstream of the
+      // successful write + logPrint + return. Before the fix, that throw
+      // replaced the pending success and was swallowed by `on Exception`,
+      // which fell through to the PDF path below -- a second, duplicate
+      // print of the same slip.
+      final container = await pumpLedgerly(
+        tester,
+        seed: seedMillPhone,
+        viewSize: const Size(390, 844),
+      );
+      await container
+          .read(globalPrefsProvider)
+          .setThermalPrinter(name: 'MPT-II', mac: '00:11:22:33:44:55');
+      final thermal = container.read(
+        thermalPrinterServiceProvider,
+      ) as FakeThermalPrinterService;
+      thermal.throwOnDisconnect = true;
+      await pressCtrl(tester, LogicalKeyboardKey.keyI);
+      await tester.enterText(find.byKey(const Key('bill.customer')), 'Rashid');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter, platform: 'windows');
+      await tester.enterText(find.byKey(const Key('cash.amount')), '1000');
+      await pressCtrl(tester, LogicalKeyboardKey.enter);
+
+      await pressCtrl(tester, LogicalKeyboardKey.keyP);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(thermal.written, hasLength(1));
+      expect(thermal.disconnected, isTrue);
+      final printing =
+          container.read(printingServiceProvider) as FakePrintingService;
+      expect(printing.printedJobs, isEmpty); // no fallthrough to the PDF path
+      final db = container.read(openFirmProvider).value!.db;
+      final rows = await db.customSelect('SELECT kind FROM print_log').get();
+      expect(rows, hasLength(1)); // logged once, not twice
+    },
+    variant: phoneOnly,
   );
 
   testWidgets(

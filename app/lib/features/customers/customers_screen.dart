@@ -221,8 +221,10 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
       onPressed: () => context.go('/customers/opening-balances'),
       child: const Text('Import opening balances'),
     );
+    // The keyboard hint has no meaning on a touch-only device, so it's
+    // dropped below kCompactBreakpoint -- the count stays either way.
     final summary = Text(
-      '$total total · Ctrl+N adds one',
+      compact ? '$total total' : '$total total · Ctrl+N adds one',
       style: TextStyle(fontSize: 12.5, color: c.ink3),
     );
     if (compact) {

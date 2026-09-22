@@ -137,9 +137,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
                     controller: _phone,
                     style: numberStyle.copyWith(fontSize: 14),
                     keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(
-                      hintText: '0300-1234567',
-                    ),
+                    decoration: const InputDecoration(hintText: '0300-1234567'),
                   ),
                   compact: compact,
                 ),
@@ -157,10 +155,15 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
                     child: Text(e, style: TextStyle(color: c.giveable)),
                   ),
                 const SizedBox(height: 16),
-                Text(
-                  'Ctrl+Enter save · Esc back',
-                  style: TextStyle(fontSize: 12.5, color: c.ink3),
-                ),
+                // Desktop-only shortcut hint: a touch-only device can never
+                // send Ctrl+Enter, so it has no meaning below
+                // kCompactBreakpoint (the compact Save button below is the
+                // equivalent there).
+                if (!compact)
+                  Text(
+                    'Ctrl+Enter save · Esc back',
+                    style: TextStyle(fontSize: 12.5, color: c.ink3),
+                  ),
                 if (compact)
                   // Desktop already has Ctrl+Enter/Esc for this, shown in
                   // the hint above -- no on-screen equivalent needed there.

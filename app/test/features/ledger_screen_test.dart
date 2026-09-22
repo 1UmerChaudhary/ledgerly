@@ -250,6 +250,43 @@ void main() {
     variant: windowsOnly,
   );
 
+  testWidgets(
+    'at a 640dp window, the ledger back button is reachable even though the '
+    'rail also renders there',
+    (tester) async {
+      // The concrete symptom of the same 600-699dp band as the test above:
+      // the rail still renders at 640dp (640 >= kCompactBreakpoint), which
+      // is what leaves the ledger screen below it only ~544dp -- correctly
+      // under kCompactBreakpoint, so the screen renders its own compact/
+      // push layout. Before AppShell's back-button check accounted for that
+      // same post-rail width, it used the shell's un-reduced 640dp and hid
+      // shell.backButton, stranding a screen that had already switched to
+      // phone-style navigation with no way back.
+      final container = await pumpLedgerly(
+        tester,
+        seed: seedLedger,
+        viewSize: const Size(640, 800),
+      );
+      container.read(routerProvider).go('/customers/$rashidId');
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('shell.backButton')), findsOneWidget);
+      // The rail (not the bottom nav) is still what's showing here -- the
+      // fix must not touch rail-vs-bottom-nav visibility, only whether the
+      // back button also renders alongside it. Making the rail itself
+      // react to the narrower post-rail width would squeeze the ledger
+      // screen's desktop two-pane layout into ~544dp and overflow (that
+      // regression was caught by the test above).
+      expect(find.byKey(const Key('shell.bottomNav')), findsNothing);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.byKey(const Key('shell.backButton')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('dashboard.search')), findsOneWidget);
+    },
+    variant: windowsOnly,
+  );
+
   _compactBillActionTests();
   _showDeletedTests();
   testWidgets(
@@ -625,6 +662,17 @@ void _compactBillActionTests() {
     },
     variant: phoneOnly,
   );
+
+  testWidgets('Export PNG writes one, from the pushed detail', (tester) async {
+    final container = await openSaleDetail(tester);
+    final printing =
+        container.read(printingServiceProvider) as FakePrintingService;
+
+    // exportSlipPng had no call site anywhere in the app before this.
+    await tester.tap(find.byKey(const Key('ledger.detail.exportPng')));
+    await tester.pumpAndSettle();
+    expect(printing.exportedPngBaseNames.single, startsWith('Slip-'));
+  }, variant: phoneOnly);
 
   testWidgets(
     'Edit and Delete are disabled on an already-deleted bill, like their '

@@ -214,8 +214,10 @@ class ItemsScreen extends ConsumerWidget {
         color: c.ink3,
       ),
     );
+    // The keyboard hint has no meaning on a touch-only device, so it's
+    // dropped below kCompactBreakpoint -- the count stays either way.
     final summary = Text(
-      '$total total · Ctrl+N adds one',
+      compact ? '$total total' : '$total total · Ctrl+N adds one',
       style: TextStyle(fontSize: 12.5, color: c.ink3),
     );
     if (compact) {
@@ -353,10 +355,15 @@ class _ItemFormScreenState extends ConsumerState<ItemFormScreen> {
                     child: Text(e, style: TextStyle(color: c.giveable)),
                   ),
                 const SizedBox(height: 16),
-                Text(
-                  'Ctrl+Enter save · Esc back',
-                  style: TextStyle(fontSize: 12.5, color: c.ink3),
-                ),
+                // Desktop-only shortcut hint: a touch-only device can never
+                // send Ctrl+Enter, so it has no meaning below
+                // kCompactBreakpoint (the compact Save button below is the
+                // equivalent there).
+                if (!compact)
+                  Text(
+                    'Ctrl+Enter save · Esc back',
+                    style: TextStyle(fontSize: 12.5, color: c.ink3),
+                  ),
                 if (compact)
                   // Same reasoning as customer_form_screen.dart's Task 11
                   // fix: a touch-only device can never send Ctrl+Enter, so

@@ -152,9 +152,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             if (rows.isEmpty)
               Expanded(
                 child: Center(
-                  child: Text(
-                    l10n.noCustomersYet,
-                    style: TextStyle(color: c.ink2),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final compact = constraints.maxWidth < kCompactBreakpoint;
+                      // Ctrl+N has no meaning on a touch-only device, so the
+                      // keyboard-hint half of the message is dropped below
+                      // kCompactBreakpoint -- same reasoning as
+                      // customers_screen.dart/items_screen.dart's header
+                      // summary.
+                      return Text(
+                        compact ? 'No customers yet.' : l10n.noCustomersYet,
+                        style: TextStyle(color: c.ink2),
+                      );
+                    },
                   ),
                 ),
               )

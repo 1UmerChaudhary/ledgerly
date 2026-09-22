@@ -71,4 +71,43 @@ void main() {
     },
     variant: windowsOnly,
   );
+
+  testWidgets(
+    'F2 on a bill then Esc with no changes lands back on the customer\'s '
+    'ledger, not the dashboard',
+    (tester) async {
+      await pumpLedgerly(tester, seed: seedLedger);
+      await tester.enterText(
+        find.byKey(const Key('dashboard.search')),
+        'rashid',
+      );
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter, platform: 'windows');
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.arrowDown,
+        platform: 'windows',
+      );
+      await tester.sendKeyEvent(
+        LogicalKeyboardKey.arrowDown,
+        platform: 'windows',
+      );
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.f2, platform: 'windows');
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('bill.screen')), findsOneWidget);
+
+      // Nothing typed -- d.dirty is still false, so _escape takes the
+      // "not dirty" branch (no discard dialog) straight away.
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape, platform: 'windows');
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('bill.discardDialog')), findsNothing);
+      expect(find.byKey(const Key('bill.screen')), findsNothing);
+      expect(find.byKey(const Key('ledger.screen')), findsOneWidget);
+      expect(find.text('Rashid Traders'), findsOneWidget);
+      expect(find.byKey(const Key('dashboard.search')), findsNothing);
+    },
+    variant: windowsOnly,
+  );
 }

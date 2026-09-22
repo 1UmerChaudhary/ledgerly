@@ -275,6 +275,12 @@ class FakeThermalPrinterService implements ThermalPrinterService {
   bool throwOnConnect = false;
   bool throwOnWrite = false;
 
+  /// Set to simulate a disconnect that itself throws after a successful
+  /// write -- the real plugin can fail to tear down the socket cleanly
+  /// (adapter dropped mid-teardown, already-gone connection) even though
+  /// the print itself went through.
+  bool throwOnDisconnect = false;
+
   @override
   Future<List<BluetoothPrinterInfo>> pairedPrinters() async => paired;
 
@@ -297,7 +303,12 @@ class FakeThermalPrinterService implements ThermalPrinterService {
   }
 
   @override
-  Future<void> disconnect() async => disconnected = true;
+  Future<void> disconnect() async {
+    disconnected = true;
+    if (throwOnDisconnect) {
+      throw PlatformException(code: 'BT_TEARDOWN', message: 'teardown failed');
+    }
+  }
 }
 
 /// Records what restore was asked to do instead of touching a real backup

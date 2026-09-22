@@ -280,6 +280,121 @@ void main() {
   );
 
   testWidgets(
+    'at phone width, the customers header keeps the total but drops the '
+    'Ctrl+N hint a touch-only device can never send',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: seed,
+        viewSize: const Size(390, 844),
+      );
+      container.read(routerProvider).go('/customers');
+      await tester.pumpAndSettle();
+
+      expect(find.text('2 total'), findsOneWidget);
+      expect(find.text('2 total · Ctrl+N adds one'), findsNothing);
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'at desktop width, the customers header still shows the Ctrl+N hint '
+    'alongside the total',
+    (tester) async {
+      final container = await pumpLedgerly(tester, seed: seed);
+      container.read(routerProvider).go('/customers');
+      await tester.pumpAndSettle();
+
+      expect(find.text('2 total · Ctrl+N adds one'), findsOneWidget);
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets('at phone width, the items header keeps the total but drops the '
+      'Ctrl+N hint a touch-only device can never send', (tester) async {
+    final container = await pumpLedgerly(
+      tester,
+      seed: seed,
+      viewSize: const Size(390, 844),
+    );
+    container.read(routerProvider).go('/items');
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 total'), findsOneWidget);
+    expect(find.text('1 total · Ctrl+N adds one'), findsNothing);
+  }, variant: phoneOnly);
+
+  testWidgets('at desktop width, the items header still shows the Ctrl+N hint '
+      'alongside the total', (tester) async {
+    final container = await pumpLedgerly(tester, seed: seed);
+    container.read(routerProvider).go('/items');
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 total · Ctrl+N adds one'), findsOneWidget);
+  }, variant: windowsOnly);
+
+  testWidgets(
+    'at phone width, the customer form drops the Ctrl+Enter/Esc hint -- the '
+    'compact Save button is the only way to save there',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: seed,
+        viewSize: const Size(390, 844),
+      );
+      container.read(routerProvider).go('/customers/new');
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ctrl+Enter save · Esc back'), findsNothing);
+      expect(find.byKey(const Key('customer.compactSave')), findsOneWidget);
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'at desktop width, the customer form still shows the Ctrl+Enter/Esc '
+    'hint',
+    (tester) async {
+      final container = await pumpLedgerly(tester, seed: seed);
+      container.read(routerProvider).go('/customers/new');
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ctrl+Enter save · Esc back'), findsOneWidget);
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
+    'at phone width, the item form drops the Ctrl+Enter/Esc hint -- the '
+    'compact Save button is the only way to save there',
+    (tester) async {
+      final container = await pumpLedgerly(
+        tester,
+        seed: seed,
+        viewSize: const Size(390, 844),
+      );
+      container.read(routerProvider).go('/items/new');
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ctrl+Enter save · Esc back'), findsNothing);
+      expect(find.byKey(const Key('item.compactSave')), findsOneWidget);
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'at desktop width, the item form still shows the Ctrl+Enter/Esc hint',
+    (tester) async {
+      final container = await pumpLedgerly(tester, seed: seed);
+      container.read(routerProvider).go('/items/new');
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ctrl+Enter save · Esc back'), findsOneWidget);
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
     'at phone width, the system back gesture from the new-customer form '
     'returns to the customers list, not the dashboard',
     (tester) async {

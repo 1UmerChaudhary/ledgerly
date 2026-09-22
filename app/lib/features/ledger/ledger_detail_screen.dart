@@ -121,6 +121,10 @@ class _LedgerDetailScreenState extends ConsumerState<LedgerDetailScreen> {
                 final firm = ref.read(openFirmProvider).value;
                 if (firm != null) exportSlipPdf(ref, firm, entry.bill.id);
               },
+              onExportPng: () {
+                final firm = ref.read(openFirmProvider).value;
+                if (firm != null) exportSlipPng(ref, firm, entry.bill.id);
+              },
             ),
           ],
         );
@@ -142,6 +146,7 @@ class _Actions extends StatelessWidget {
     required this.onRestore,
     required this.onPrint,
     required this.onExportPdf,
+    required this.onExportPng,
   });
 
   final LedgerEntry entry;
@@ -151,6 +156,7 @@ class _Actions extends StatelessWidget {
   final VoidCallback onRestore;
   final VoidCallback onPrint;
   final VoidCallback onExportPdf;
+  final VoidCallback onExportPng;
 
   @override
   Widget build(BuildContext context) {
@@ -196,6 +202,11 @@ class _Actions extends StatelessWidget {
             key: const Key('ledger.detail.exportPdf'),
             onPressed: onExportPdf,
             child: const Text('Export PDF'),
+          ),
+          OutlinedButton(
+            key: const Key('ledger.detail.exportPng'),
+            onPressed: onExportPng,
+            child: const Text('Export PNG'),
           ),
         ],
       ),
