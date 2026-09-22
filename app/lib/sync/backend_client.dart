@@ -23,6 +23,28 @@ class BackendConflictException extends BackendException {
   BackendConflictException(String message) : super(409, message);
 }
 
+/// `/auth/google` refused to auto-link: a password account already exists
+/// for this Google account's email. The backend won't link it automatically
+/// (that would let anyone who can present a Google token for an email take
+/// over an account they never proved ownership of via its password) — the
+/// user has to log in normally first, then call `/auth/google/link`. Kept
+/// distinct from [BackendConflictException] so the Settings UI can show this
+/// specific instruction instead of the raw server detail string.
+class BackendGoogleAccountExistsException extends BackendConflictException {
+  BackendGoogleAccountExistsException()
+    : super(
+        'An account with this email already exists. Log in with your '
+        'password, then link Google sign-in from Settings.',
+      );
+}
+
+/// The Web OAuth client ID from the Google Cloud Console project's Web
+/// client — the same value pasted into the backend's
+/// GOOGLE_AUDIENCE_ALLOWLIST (see backend/app/routers/auth.py).
+// TODO(you): paste the Web OAuth client ID from Task 9's Cloud Console setup.
+const googleWebClientId =
+    'REPLACE-WITH-THE-WEB-CLIENT-ID.apps.googleusercontent.com';
+
 class BackendFirmInfo {
   const BackendFirmInfo({
     required this.id,
@@ -282,6 +304,27 @@ class BackendClient {
       }),
     );
     return BackendSession.fromJson(await _decode(response));
+  }
+
+  Future<BackendSession> signInWithGoogle({
+    required String idToken,
+    required BackendFirmInfo firm,
+    required BackendDeviceInfo device,
+  }) async {
+    final response = await _http.post(
+      _uri('/auth/google'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'id_token': idToken,
+        'firm': firm.toJson(),
+        'device': device.toJson(),
+      }),
+    );
+    if (response.statusCode == 409 &&
+        _detailFrom(response.body) == 'email_exists_unlinked') {
+      throw BackendGoogleAccountExistsException();
+    }
+    return BackendSession.fromJson(await _decode(response, expect: 201));
   }
 
   Future<BackendTokenPair> refresh(String refreshToken) async {

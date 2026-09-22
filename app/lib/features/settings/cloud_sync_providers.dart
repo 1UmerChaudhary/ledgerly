@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 
 import '../../bootstrap/global_prefs.dart';
@@ -17,6 +18,31 @@ final backendClientProvider = Provider<BackendClient>((ref) {
   final url = ref.watch(globalPrefsProvider).backendUrl ?? defaultBackendUrl;
   return BackendClient(baseUrl: url, httpClient: ref.watch(httpClientProvider));
 });
+
+/// The seam between the app and Google Sign-In. Real by default, overridden
+/// in tests with a fake — same reasoning as [httpClientProvider]: the real
+/// implementation drives platform channels the flutter_tester binary has no
+/// registered implementation for, exactly the kind of OS call that hangs (or
+/// throws) in this project's sandboxed test environment.
+abstract class GoogleAuthenticator {
+  /// Returns the signed-in account's ID token, or null if the interactive
+  /// flow completed without one (e.g. the user cancelled the picker).
+  Future<String?> signIn();
+}
+
+class RealGoogleAuthenticator implements GoogleAuthenticator {
+  @override
+  Future<String?> signIn() async {
+    final googleSignIn = GoogleSignIn.instance;
+    await googleSignIn.initialize(serverClientId: googleWebClientId);
+    final account = await googleSignIn.authenticate();
+    return account.authentication.idToken;
+  }
+}
+
+final googleAuthenticatorProvider = Provider<GoogleAuthenticator>(
+  (ref) => RealGoogleAuthenticator(),
+);
 
 /// The signed-in cloud session, if any. Register/login write straight
 /// through to GlobalPrefs so the connection survives a restart.
@@ -69,6 +95,40 @@ class CloudSessionNotifier extends Notifier<CloudSession?> {
       email: email,
       password: password,
       deviceId: firm.ctx.deviceId,
+    );
+    final session = CloudSession(
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+      email: result.userEmail,
+      firmId: result.firmId,
+      firmName: result.firmName,
+    );
+    await prefs.setCloudSession(session);
+    state = session;
+  }
+
+  Future<void> signInWithGoogle() async {
+    final firm = ref.read(openFirmProvider).value;
+    if (firm == null) return;
+    final prefs = ref.read(globalPrefsProvider);
+    final client = ref.read(backendClientProvider);
+    final idToken = await ref.read(googleAuthenticatorProvider).signIn();
+    if (idToken == null) {
+      throw StateError('Google sign-in did not return an ID token.');
+    }
+    final result = await client.signInWithGoogle(
+      idToken: idToken,
+      firm: BackendFirmInfo(
+        id: firm.ctx.firmId,
+        name: firm.firmName,
+        contactNumber: firm.contactNumber,
+      ),
+      device: BackendDeviceInfo(
+        id: firm.ctx.deviceId,
+        name: 'Android',
+        platform: 'android',
+        shortCode: firm.ctx.deviceShortCode,
+      ),
     );
     final session = CloudSession(
       accessToken: result.accessToken,

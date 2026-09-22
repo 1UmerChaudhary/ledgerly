@@ -96,6 +96,7 @@ Future<ProviderContainer> pumpLedgerly(
   final fakeThermal = FakeThermalPrinterService();
   final fakeRestoreService = FakeBackupService();
   final fakeHttp = FakeHttpClient();
+  final fakeGoogleAuth = FakeGoogleAuthenticator();
   final container = ProviderContainer(
     overrides: [
       globalPrefsProvider.overrideWithValue(prefs),
@@ -109,6 +110,7 @@ Future<ProviderContainer> pumpLedgerly(
       thermalPrinterServiceProvider.overrideWithValue(fakeThermal),
       restoreServiceProvider.overrideWithValue(fakeRestoreService),
       httpClientProvider.overrideWithValue(fakeHttp),
+      googleAuthenticatorProvider.overrideWithValue(fakeGoogleAuth),
       databaseOpenerProvider.overrideWithValue(openDb),
       // Same reasoning as the fakes above: EncryptionService is all real file
       // I/O, which wedges the widget tester here. Its real behaviour --
@@ -349,6 +351,21 @@ class FakeHttpClient extends http.BaseClient {
       headers: response.headers,
     );
   }
+}
+
+/// Stands in for [GoogleAuthenticator] in widget tests: no real platform
+/// channel call (flutter_tester has no Google Sign-In implementation
+/// registered for it, the same reasoning [FakeHttpClient] exists for). Set
+/// [idToken] to the value the fake interactive sign-in should hand back;
+/// left null, it reproduces a flow that completed without one (cancelled
+/// picker), which [CloudSessionNotifier.signInWithGoogle] turns into a
+/// thrown StateError -- the same "fails loudly on the unconfigured case"
+/// shape as [FakeHttpClient]'s default handler.
+class FakeGoogleAuthenticator implements GoogleAuthenticator {
+  String? idToken;
+
+  @override
+  Future<String?> signIn() async => idToken;
 }
 
 /// Stands in for [EncryptionService] in widget tests: the same method

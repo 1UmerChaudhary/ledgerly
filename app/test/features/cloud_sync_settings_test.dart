@@ -129,4 +129,81 @@ void main() {
 
     expect(find.textContaining('Pushed 0, pulled 0'), findsOneWidget);
   }, variant: windowsOnly);
+
+  testWidgets('Sign in with Google is only shown on Android', (tester) async {
+    await pumpLedgerly(tester, seed: seed);
+    await pressCtrl(tester, LogicalKeyboardKey.comma);
+    expect(find.byKey(const Key('settings.signInWithGoogle')), findsNothing);
+  }, variant: windowsOnly);
+
+  testWidgets('Sign in with Google is offered on Android', (tester) async {
+    await pumpLedgerly(tester, seed: seed);
+    await pressCtrl(tester, LogicalKeyboardKey.comma);
+    expect(find.byKey(const Key('settings.signInWithGoogle')), findsOneWidget);
+  }, variant: phoneOnly);
+
+  testWidgets(
+    'signing in with Google reaches the backend and shows the connected '
+    'state',
+    (tester) async {
+      final container = await pumpLedgerly(tester, seed: seed);
+      final fakeGoogleAuth = container.read(
+        googleAuthenticatorProvider,
+      ) as FakeGoogleAuthenticator;
+      fakeGoogleAuth.idToken = 'fake-google-id-token';
+      final fakeHttp = container.read(httpClientProvider) as FakeHttpClient;
+      fakeHttp.handler = (request) async {
+        expect(request.url.path, '/auth/google');
+        return http.Response(
+          jsonEncode({
+            'access_token': 'a',
+            'refresh_token': 'r',
+            'token_type': 'bearer',
+            'user': {'id': 'u1', 'name': 'Owner', 'email': 'owner@gmail.com'},
+            'firm': {'id': 'f1', 'name': 'Mill'},
+          }),
+          201,
+        );
+      };
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+
+      await tester.ensureVisible(
+        find.byKey(const Key('settings.signInWithGoogle')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings.signInWithGoogle')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('settings.cloudConnected')), findsOneWidget);
+      expect(find.textContaining('owner@gmail.com'), findsOneWidget);
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'signing in with Google when the email already has a password account '
+    'shows a specific message',
+    (tester) async {
+      final container = await pumpLedgerly(tester, seed: seed);
+      final fakeGoogleAuth = container.read(
+        googleAuthenticatorProvider,
+      ) as FakeGoogleAuthenticator;
+      fakeGoogleAuth.idToken = 'fake-google-id-token';
+      final fakeHttp = container.read(httpClientProvider) as FakeHttpClient;
+      fakeHttp.handler = (request) async =>
+          http.Response(jsonEncode({'detail': 'email_exists_unlinked'}), 409);
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+
+      await tester.ensureVisible(
+        find.byKey(const Key('settings.signInWithGoogle')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings.signInWithGoogle')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('settings.cloudError')), findsOneWidget);
+      expect(find.textContaining('Log in with your password'), findsOneWidget);
+    },
+    variant: phoneOnly,
+  );
 }

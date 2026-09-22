@@ -244,6 +244,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  Future<void> _signInWithGoogle() async {
+    setState(() => _cloudError = null);
+    await _saveBackendUrl();
+    try {
+      await ref.read(cloudSessionProvider.notifier).signInWithGoogle();
+    } on BackendException catch (e) {
+      if (mounted) setState(() => _cloudError = e.message);
+    }
+  }
+
   Future<void> _disconnect() =>
       ref.read(cloudSessionProvider.notifier).logout();
 
@@ -477,44 +487,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ),
                       _field(
                         '',
-                        // The two buttons' combined intrinsic width is close
-                        // enough to a phone viewport that a Row overflows --
-                        // below kCompactBreakpoint use Wrap instead, which
-                        // drops "Log in" to its own line rather than
-                        // overflowing (same reasoning as ledger_screen.dart's
-                        // header split); above it, the Row is unchanged.
-                        compact
-                            ? Wrap(
-                                spacing: 10,
-                                runSpacing: 8,
-                                children: [
-                                  OutlinedButton(
-                                    key: const Key('settings.cloudRegister'),
-                                    onPressed: _register,
-                                    child: const Text('Create cloud account'),
-                                  ),
-                                  OutlinedButton(
-                                    key: const Key('settings.cloudLogin'),
-                                    onPressed: _login,
-                                    child: const Text('Log in'),
-                                  ),
-                                ],
-                              )
-                            : Row(
-                                children: [
-                                  OutlinedButton(
-                                    key: const Key('settings.cloudRegister'),
-                                    onPressed: _register,
-                                    child: const Text('Create cloud account'),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  OutlinedButton(
-                                    key: const Key('settings.cloudLogin'),
-                                    onPressed: _login,
-                                    child: const Text('Log in'),
-                                  ),
-                                ],
+                        // Wrap, not Row: on Android a third button (Google)
+                        // joins the other two and their combined intrinsic
+                        // width overflows even the 520px desktop field box,
+                        // not just a phone viewport -- same reasoning as the
+                        // Encryption section's "Secrets" field below.
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 8,
+                          children: [
+                            OutlinedButton(
+                              key: const Key('settings.cloudRegister'),
+                              onPressed: _register,
+                              child: const Text('Create cloud account'),
+                            ),
+                            OutlinedButton(
+                              key: const Key('settings.cloudLogin'),
+                              onPressed: _login,
+                              child: const Text('Log in'),
+                            ),
+                            // google_sign_in has no Windows/Linux
+                            // implementation -- same platform check
+                            // print_actions.dart uses, testable via
+                            // TargetPlatformVariant rather than the real
+                            // dart:io platform.
+                            if (defaultTargetPlatform == TargetPlatform.android)
+                              OutlinedButton(
+                                key: const Key('settings.signInWithGoogle'),
+                                onPressed: _signInWithGoogle,
+                                child: const Text('Sign in with Google'),
                               ),
+                          ],
+                        ),
                         compact: compact,
                       ),
                       if (_cloudError case final e?)
