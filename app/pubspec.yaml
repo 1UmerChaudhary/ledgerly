@@ -61,6 +61,10 @@ flutter:
 # sqlite3 3.x bundles the native library through Dart hooks. Ship the SQLCipher
 # build from day one (key empty until encryption is turned on) because swapping
 # the library after customers have databases is not possible.
+#
+# INERT, kept only to document that this package depends on it. Pub reads hook
+# user-defines from the workspace ROOT pubspec (../pubspec.yaml) and ignores
+# member ones, so editing this block changes nothing. Edit the root instead.
 hooks:
   user_defines:
     sqlite3:

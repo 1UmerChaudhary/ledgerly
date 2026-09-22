@@ -20,6 +20,9 @@ dev_dependencies:
   lints: ^6.0.0
   drift_dev: ^2.35.0
   build_runner: ^2.4.0
+# INERT, kept only to document that this package depends on it. Pub reads hook
+# user-defines from the workspace ROOT pubspec (../../pubspec.yaml) and ignores
+# member ones, so editing this block changes nothing. Edit the root instead.
 hooks:
   user_defines:
     sqlite3:
