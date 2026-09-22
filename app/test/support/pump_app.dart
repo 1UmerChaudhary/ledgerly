@@ -323,21 +323,45 @@ class FakeBackupService extends BackupService {
 
   String? restoredPath;
 
+  /// The key the restore was actually performed with — null for a backup
+  /// keyed like this session, the backup's own unwrapped key for one that
+  /// came with its own envelope.
+  List<int>? restoredWithKey;
+  List<int>? validatedWithKey;
+
   /// Set to reject the next validation, the way a real corrupt or missing
   /// file would, without ever touching a real file.
   String? rejectWith;
 
+  /// Set to the path of the envelope a picked backup arrived with. Overriding
+  /// [pairedEnvelopeOf] rather than letting the real one stat the disk is
+  /// what keeps this out of the filesystem in a widget test.
+  String? pairedEnvelopePath;
+
+  /// What a picked backup's bytes look like, for the "encrypted backup with
+  /// no envelope beside it" message.
+  bool ciphertext = false;
+
   @override
-  void validateBackup(File backupFile) {
+  File? pairedEnvelopeOf(File backupFile) =>
+      pairedEnvelopePath == null ? null : File(pairedEnvelopePath!);
+
+  @override
+  bool isCiphertext(File backupFile) => ciphertext;
+
+  @override
+  void validateBackup(File backupFile, {List<int>? withKey}) {
+    validatedWithKey = withKey;
     if (rejectWith case final message?) {
       throw InvalidBackupException(message);
     }
   }
 
   @override
-  Future<File> restoreFrom(File backupFile) async {
-    validateBackup(backupFile);
+  Future<File> restoreFrom(File backupFile, {List<int>? withKey}) async {
+    validateBackup(backupFile, withKey: withKey);
     restoredPath = backupFile.path;
+    restoredWithKey = withKey;
     return File('unused-pre-restore-copy');
   }
 }
@@ -434,6 +458,47 @@ class FakeEncryptionService extends EncryptionService {
   }
 
   Uint8List masterKeyOf(String firmId) => _envelopes[firmId]!.masterKey;
+
+  /// Envelopes addressed by FILE rather than by firm: the sidecar that
+  /// travelled beside a backup, which is the only thing that can open it
+  /// once that backup is somewhere this device's key means nothing.
+  final _envelopesByPath = <String, _FakeEnvelope>{};
+
+  /// Puts a backup's own envelope at [envelopePath] and returns the master
+  /// key it wraps, so a test can assert the restore used exactly that key.
+  ({Uint8List masterKey, String recoveryCode}) enrolBackupEnvelope(
+    String envelopePath, {
+    required String passphrase,
+  }) {
+    final code = encodeRecoveryCode(_bytes(32));
+    final key = _bytes(32);
+    _envelopesByPath[envelopePath] = _FakeEnvelope(
+      passphrase: passphrase,
+      recoveryCode: code,
+      masterKey: key,
+    );
+    return (masterKey: key, recoveryCode: code);
+  }
+
+  @override
+  Future<Uint8List?> unlockEnvelopeWithPassphrase(
+    File envelopeFile,
+    String passphrase,
+  ) async {
+    final envelope = _envelopesByPath[envelopeFile.path];
+    if (envelope == null || envelope.passphrase != passphrase) return null;
+    return Uint8List.fromList(envelope.masterKey);
+  }
+
+  @override
+  Future<Uint8List?> unlockEnvelopeWithRecoveryCode(
+    File envelopeFile,
+    String recoveryCode,
+  ) async {
+    final envelope = _envelopesByPath[envelopeFile.path];
+    if (envelope == null || envelope.recoveryCode != recoveryCode) return null;
+    return Uint8List.fromList(envelope.masterKey);
+  }
 
   @override
   Future<bool> isEncrypted(String firmId) async =>

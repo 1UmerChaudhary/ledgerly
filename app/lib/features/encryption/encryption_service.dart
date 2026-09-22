@@ -614,11 +614,28 @@ class EncryptionService {
       .map((row) => row['name']! as String)
       .toList();
 
-  Future<Uint8List?> unlockWithPassphrase(
+  Future<Uint8List?> unlockWithPassphrase(String firmId, String passphrase) =>
+      unlockEnvelopeWithPassphrase(paths.firmKeyEnvelope(firmId), passphrase);
+
+  Future<Uint8List?> unlockWithRecoveryCode(
     String firmId,
+    String recoveryCode,
+  ) => unlockEnvelopeWithRecoveryCode(
+    paths.firmKeyEnvelope(firmId),
+    recoveryCode,
+  );
+
+  /// Unlocks an envelope by FILE rather than by firm — the envelope that
+  /// travelled beside a backup, which is the only thing that can open that
+  /// backup once it is somewhere this firm's current session key means
+  /// nothing: another device, or a backup taken before a recovery-code
+  /// rotation on this one. The two methods above are this same logic aimed
+  /// at the firm's own sidecar.
+  Future<Uint8List?> unlockEnvelopeWithPassphrase(
+    File envelopeFile,
     String passphrase,
   ) async {
-    final envelope = await _storeFor(firmId).read();
+    final envelope = await KeyEnvelopeStore(envelopeFile).read();
     if (envelope == null) return null;
     final wrappingKey = await deriveWrappingKey(
       passphrase,
@@ -634,11 +651,11 @@ class EncryptionService {
     }
   }
 
-  Future<Uint8List?> unlockWithRecoveryCode(
-    String firmId,
+  Future<Uint8List?> unlockEnvelopeWithRecoveryCode(
+    File envelopeFile,
     String recoveryCode,
   ) async {
-    final envelope = await _storeFor(firmId).read();
+    final envelope = await KeyEnvelopeStore(envelopeFile).read();
     if (envelope == null) return null;
     if (decodeRecoveryCode(recoveryCode) == null) {
       return null; // invalid check symbol

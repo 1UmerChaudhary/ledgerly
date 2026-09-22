@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -385,6 +387,173 @@ class _NewPassphraseScreenState extends ConsumerState<NewPassphraseScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Asked for when a picked backup carries its own key envelope beside it.
+///
+/// Which secret opens a backup is a property of THAT FILE, not of this
+/// session: a backup restored onto a replacement machine has no session to
+/// belong to, and one taken before a recovery-code rotation is opened by the
+/// code that was current when it was made. Assuming the live firm's key
+/// applies is what would make both of those impossible.
+///
+/// Pops the master key it unwrapped, or null when the user gives up — the
+/// same two answers [UnlockScreen] deals in, against an arbitrary envelope
+/// file rather than the firm's own.
+class BackupUnlockDialog extends ConsumerStatefulWidget {
+  const BackupUnlockDialog({super.key, required this.envelopeFile});
+
+  final File envelopeFile;
+
+  @override
+  ConsumerState<BackupUnlockDialog> createState() => _BackupUnlockDialogState();
+}
+
+class _BackupUnlockDialogState extends ConsumerState<BackupUnlockDialog> {
+  final _passphrase = TextEditingController();
+  final _recoveryCode = TextEditingController();
+  bool _recoveryVisible = false;
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _passphrase.dispose();
+    _recoveryCode.dispose();
+    super.dispose();
+  }
+
+  Future<void> _unlock() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final key = await ref
+        .read(encryptionServiceProvider)
+        .unlockEnvelopeWithPassphrase(widget.envelopeFile, _passphrase.text);
+    if (!mounted) return;
+    if (key == null) {
+      setState(() {
+        _busy = false;
+        _error = 'That passphrase does not open this backup.';
+      });
+      return;
+    }
+    setState(() => _busy = false);
+    Navigator.of(context).pop(key);
+  }
+
+  Future<void> _unlockWithRecoveryCode() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    // Same reason [UnlockScreen] does this: the KDF hashes the code as a
+    // string, so a correct sheet typed in lower case derives a different
+    // wrapping key and is wrongly reported as wrong.
+    final canonical = canonicaliseRecoveryCode(_recoveryCode.text);
+    final key = canonical == null
+        ? null
+        : await ref
+              .read(encryptionServiceProvider)
+              .unlockEnvelopeWithRecoveryCode(widget.envelopeFile, canonical);
+    if (!mounted) return;
+    if (key == null) {
+      setState(() {
+        _busy = false;
+        _error = 'That recovery code does not open this backup.';
+      });
+      return;
+    }
+    setState(() => _busy = false);
+    Navigator.of(context).pop(key);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return AlertDialog(
+      key: const Key('encryption.backupUnlockDialog'),
+      title: const Text('Unlock this backup'),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'This backup is encrypted and came with its own key file. '
+                'Enter the passphrase that was set on the firm when this '
+                'backup was taken — not necessarily the one this device uses '
+                'now.',
+                style: TextStyle(color: c.ink2),
+              ),
+              const SizedBox(height: 10),
+              const Text('Passphrase'),
+              TextField(
+                key: const Key('encryption.backupPassphrase'),
+                controller: _passphrase,
+                obscureText: true,
+                autofocus: true,
+                onSubmitted: (_) => _unlock(),
+              ),
+              TextButton(
+                key: const Key('encryption.backupForgotPassphrase'),
+                onPressed: () => setState(() {
+                  _recoveryVisible = true;
+                  _error = null;
+                }),
+                child: const Text("I don't have that passphrase"),
+              ),
+              if (_recoveryVisible) ...[
+                Text(
+                  "Type the recovery code from that backup's own sheet.",
+                  style: TextStyle(color: c.ink2),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  key: const Key('encryption.backupRecoveryCode'),
+                  controller: _recoveryCode,
+                  style: numberStyle.copyWith(fontSize: 14),
+                  onSubmitted: (_) => _unlockWithRecoveryCode(),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  key: const Key('encryption.backupRecoverySubmit'),
+                  onPressed: _busy ? null : _unlockWithRecoveryCode,
+                  child: const Text('Unlock with recovery code'),
+                ),
+              ],
+              if (_error case final e?)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Text(
+                    e,
+                    key: const Key('encryption.backupUnlockError'),
+                    style: TextStyle(color: c.giveable),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          key: const Key('encryption.backupUnlockCancel'),
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const Key('encryption.backupUnlockSubmit'),
+          onPressed: _busy ? null : _unlock,
+          child: const Text('Unlock'),
+        ),
+      ],
     );
   }
 }

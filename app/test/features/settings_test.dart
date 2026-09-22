@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ledgerly/bootstrap/providers.dart';
 import 'package:ledgerly/bootstrap/router.dart';
 import 'package:ledgerly/features/settings/settings_providers.dart';
 import 'package:ledgerly/printing/print_actions.dart';
@@ -267,6 +268,140 @@ void main() {
   );
 
   testWidgets(
+    'restoring a backup that arrived with its own key file asks for THAT '
+    "backup's passphrase and restores with the key it unwraps",
+    (tester) async {
+      final encryption = FakeEncryptionService();
+      final container = await pumpLedgerly(
+        tester,
+        seed: seed,
+        encryption: encryption,
+      );
+      final enrolled = encryption.enrolBackupEnvelope(
+        r'D:\backup.db.key.json',
+        passphrase: 'the old machine passphrase',
+      );
+      (container.read(
+        nativePickersProvider,
+      ) as FakeNativePickers).fileToReturn = r'D:\backup.db';
+      final fake = container.read(restoreServiceProvider) as FakeBackupService;
+      fake.pairedEnvelopePath = r'D:\backup.db.key.json';
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+
+      await tester.ensureVisible(find.byKey(const Key('settings.restore')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings.restore')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('settings.restoreConfirm.confirm')),
+      );
+      await tester.pumpAndSettle();
+
+      // The session key is irrelevant to this file, so the flow stops and
+      // asks rather than validating with a key that was never going to work.
+      expect(
+        find.byKey(const Key('encryption.backupUnlockDialog')),
+        findsOneWidget,
+      );
+      expect(fake.restoredPath, isNull);
+
+      await tester.enterText(
+        find.byKey(const Key('encryption.backupPassphrase')),
+        'the old machine passphrase',
+      );
+      await tester.tap(find.byKey(const Key('encryption.backupUnlockSubmit')));
+      await tester.pumpAndSettle();
+
+      expect(fake.restoredPath, r'D:\backup.db');
+      expect(fake.restoredWithKey, enrolled.masterKey);
+      // ...and the session now holds the key that actually opens the file
+      // sitting on disk, not the one it held before the restore.
+      expect(container.read(firmMasterKeyProvider), enrolled.masterKey);
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
+    "a wrong passphrase for a backup's key file says so and restores nothing; "
+    'cancelling the prompt leaves the firm untouched',
+    (tester) async {
+      final encryption = FakeEncryptionService();
+      final container = await pumpLedgerly(
+        tester,
+        seed: seed,
+        encryption: encryption,
+      );
+      encryption.enrolBackupEnvelope(
+        r'D:\backup.db.key.json',
+        passphrase: 'the old machine passphrase',
+      );
+      (container.read(
+        nativePickersProvider,
+      ) as FakeNativePickers).fileToReturn = r'D:\backup.db';
+      final fake = container.read(restoreServiceProvider) as FakeBackupService;
+      fake.pairedEnvelopePath = r'D:\backup.db.key.json';
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+
+      await tester.ensureVisible(find.byKey(const Key('settings.restore')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings.restore')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('settings.restoreConfirm.confirm')),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const Key('encryption.backupPassphrase')),
+        'not it',
+      );
+      await tester.tap(find.byKey(const Key('encryption.backupUnlockSubmit')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('encryption.backupUnlockError')),
+        findsOneWidget,
+      );
+      expect(fake.restoredPath, isNull);
+      expect(container.read(firmMasterKeyProvider), isNull);
+
+      await tester.tap(find.byKey(const Key('encryption.backupUnlockCancel')));
+      await tester.pumpAndSettle();
+      expect(fake.restoredPath, isNull);
+      expect(find.byKey(const Key('settings.screen')), findsOneWidget);
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
+    'an encrypted backup with no key file beside it is rejected by name, not '
+    'as an unexplained bad file',
+    (tester) async {
+      final container = await pumpLedgerly(tester, seed: seed);
+      (container.read(
+        nativePickersProvider,
+      ) as FakeNativePickers).fileToReturn = r'D:\backup.db';
+      final fake = container.read(restoreServiceProvider) as FakeBackupService;
+      fake.ciphertext = true;
+      fake.rejectWith = 'That is not a valid database file.';
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+
+      await tester.ensureVisible(find.byKey(const Key('settings.restore')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings.restore')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const Key('settings.restoreConfirm.confirm')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('backup.db.key.json'), findsOneWidget);
+      expect(fake.restoredPath, isNull);
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
     'picking a paired Bluetooth printer saves it and shows it as selected',
     (tester) async {
       final container = await pumpLedgerly(tester, seed: seed);
@@ -290,23 +425,21 @@ void main() {
     variant: phoneOnly,
   );
 
-  testWidgets(
-    'the Bluetooth printer section is not offered on desktop',
-    (tester) async {
-      // print_bluetooth_thermal never runs on Windows/macOS, so a printer
-      // chosen there could only reroute slips away from the OS printer.
-      await pumpLedgerly(tester, seed: seed);
-      await pressCtrl(tester, LogicalKeyboardKey.comma);
+  testWidgets('the Bluetooth printer section is not offered on desktop', (
+    tester,
+  ) async {
+    // print_bluetooth_thermal never runs on Windows/macOS, so a printer
+    // chosen there could only reroute slips away from the OS printer.
+    await pumpLedgerly(tester, seed: seed);
+    await pressCtrl(tester, LogicalKeyboardKey.comma);
 
-      expect(find.byKey(const Key('settings.choosePrinter')), findsOneWidget);
-      expect(
-        find.byKey(const Key('settings.thermalPrinterPicker')),
-        findsNothing,
-      );
-      expect(find.text('Bluetooth printer'), findsNothing);
-    },
-    variant: windowsOnly,
-  );
+    expect(find.byKey(const Key('settings.choosePrinter')), findsOneWidget);
+    expect(
+      find.byKey(const Key('settings.thermalPrinterPicker')),
+      findsNothing,
+    );
+    expect(find.text('Bluetooth printer'), findsNothing);
+  }, variant: windowsOnly);
 
   testWidgets(
     'settings screen renders without overflow at phone width and the printer '
@@ -326,7 +459,9 @@ void main() {
       // buttons below unreachable by touch on the real device.
       expect(tester.takeException(), isNull);
 
-      await tester.ensureVisible(find.byKey(const Key('settings.choosePrinter')));
+      await tester.ensureVisible(
+        find.byKey(const Key('settings.choosePrinter')),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('settings.choosePrinter')));
       await tester.pumpAndSettle();

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,6 +17,7 @@ import '../../sync/backend_client.dart';
 import '../../theme/ledgerly_theme.dart';
 import '../dashboard/dashboard_screen.dart';
 import '../encryption/encryption_setup_screen.dart';
+import '../encryption/unlock_screen.dart';
 import 'cloud_sync_providers.dart';
 import 'settings_providers.dart';
 
@@ -181,11 +184,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return result ?? false;
   }
 
+  /// The passphrase or recovery code that opens THIS BACKUP, which is not
+  /// necessarily the one that opens the firm this device has open right now.
+  Future<Uint8List?> _unlockBackup(File envelopeFile) => showDialog<Uint8List>(
+    context: context,
+    builder: (_) => BackupUnlockDialog(envelopeFile: envelopeFile),
+  );
+
   Future<void> _restore() async {
     try {
       final outcome = await restoreFromPickedFile(
         ref,
         confirm: _confirmRestore,
+        unlockBackup: _unlockBackup,
       );
       if (outcome == RestoreOutcome.success && mounted) {
         setState(() => _message = 'Restored. Reopening the firm…');

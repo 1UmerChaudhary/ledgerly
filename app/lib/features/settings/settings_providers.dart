@@ -1,8 +1,10 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:ledgerly_core/ledgerly_core.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
+import 'package:path/path.dart' as p;
 
 import '../../bootstrap/providers.dart';
 import '../../platform/native_pickers.dart';
@@ -39,6 +41,10 @@ final backupServiceProvider = Provider<BackupService?>((ref) {
   return BackupService(
     db: firm.db,
     databaseFile: paths.firmDatabase(firm.ctx.firmId),
+    // Both wrapped copies of the master key live only here, so a backup
+    // without it can never be decrypted again — the sidecar travels with
+    // every backup this service takes.
+    keyEnvelopeFile: paths.firmKeyEnvelope(firm.ctx.firmId),
     localBackupDir: paths.backups,
     userBackupDir: folder == null ? null : Directory(folder),
     // Null for an unencrypted firm, which backs up exactly as it always has.
@@ -163,6 +169,10 @@ final restoreServiceProvider = Provider<BackupService>((ref) {
   return BackupService(
     db: firm.db,
     databaseFile: paths.firmDatabase(firm.ctx.firmId),
+    // A restored backup brings its own envelope, which becomes this firm's:
+    // the restored database is keyed by whatever made it, not by whatever
+    // this session happened to hold a moment ago.
+    keyEnvelopeFile: paths.firmKeyEnvelope(firm.ctx.firmId),
     localBackupDir: paths.backups,
     // Without this an encrypted firm could not validate its own backups, so
     // every restore would be rejected as "not a valid database file".
@@ -177,9 +187,17 @@ final restoreServiceProvider = Provider<BackupService>((ref) {
 /// close (SQLite must not have the file open while it is replaced) and a
 /// fresh one to open afterwards, by invalidating [openFirmProvider] — no
 /// app relaunch needed.
+///
+/// [unlockBackup] is asked for the key to a backup that carried its own
+/// envelope — a backup from another device, or one older than a
+/// recovery-code rotation on this one. Which key opens a backup is a property
+/// of that FILE, never of the session: assuming otherwise is what makes a
+/// restore onto a replacement machine impossible. It returns null when the
+/// user gives up, which cancels the restore with nothing touched.
 Future<RestoreOutcome> restoreFromPickedFile(
   WidgetRef ref, {
   required Future<bool> Function(String path) confirm,
+  required Future<Uint8List?> Function(File envelopeFile) unlockBackup,
 }) async {
   final firm = ref.read(openFirmProvider).value;
   if (firm == null) return RestoreOutcome.cancelled;
@@ -189,16 +207,44 @@ Future<RestoreOutcome> restoreFromPickedFile(
   if (path == null) return RestoreOutcome.cancelled;
   if (!await confirm(path)) return RestoreOutcome.cancelled;
 
+  final picked = File(path);
   final service = ref.read(restoreServiceProvider);
+  final pairedEnvelope = service.pairedEnvelopeOf(picked);
+  Uint8List? backupKey;
+  if (pairedEnvelope != null) {
+    backupKey = await unlockBackup(pairedEnvelope);
+    if (backupKey == null) return RestoreOutcome.cancelled;
+  }
+
   try {
-    service.validateBackup(File(path));
+    service.validateBackup(picked, withKey: backupKey);
   } on InvalidBackupException catch (e) {
+    // An encrypted backup with no envelope beside it rejects for exactly the
+    // same reason a corrupt file does — "not a valid database" — which sends
+    // the user hunting for a fault in a file that is perfectly fine. Say what
+    // is actually missing.
+    if (pairedEnvelope == null && service.isCiphertext(picked)) {
+      throw RestoreFailure(
+        'That backup is encrypted, and the key file it needs '
+        '(${p.basename(BackupService.envelopeSidecarFor(picked).path)}) is '
+        'not in the same folder. Copy that file next to the backup and try '
+        'again — without it no passphrase or recovery code can open this '
+        'backup.',
+      );
+    }
     throw RestoreFailure(e.message);
   }
 
   await firm.db.close();
-  await service.restoreFrom(File(path)); // re-validates; the file cannot
-  // have changed between the check above and here within one user action.
+  await service.restoreFrom(picked, withKey: backupKey); // re-validates; the
+  // file cannot have changed between the check above and here within one
+  // user action.
+  if (backupKey != null) {
+    // restoreFrom has just put the backup's envelope in place of this firm's,
+    // so the key this session was holding now unwraps nothing and opens
+    // nothing. Carry the one that actually matches the file on disk.
+    ref.read(firmMasterKeyProvider.notifier).state = backupKey;
+  }
   // The gate, not just the firm: the file on disk is a different one now, so
   // it goes through the same interrupted-migration and plaintext-copy checks
   // every other firm-open does rather than reusing this session's answer.
