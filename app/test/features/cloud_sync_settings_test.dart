@@ -206,4 +206,27 @@ void main() {
     },
     variant: phoneOnly,
   );
+
+  testWidgets(
+    'cancelling the Google account picker shows an error instead of crashing',
+    (tester) async {
+      final container = await pumpLedgerly(tester, seed: seed);
+      final fakeGoogleAuth = container.read(
+        googleAuthenticatorProvider,
+      ) as FakeGoogleAuthenticator;
+      fakeGoogleAuth.idToken = null; // simulates a cancelled account picker
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+
+      await tester.ensureVisible(
+        find.byKey(const Key('settings.signInWithGoogle')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings.signInWithGoogle')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('settings.cloudError')), findsOneWidget);
+      expect(find.textContaining('cancelled'), findsOneWidget);
+    },
+    variant: phoneOnly,
+  );
 }

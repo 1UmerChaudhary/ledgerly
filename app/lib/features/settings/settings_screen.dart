@@ -251,6 +251,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       await ref.read(cloudSessionProvider.notifier).signInWithGoogle();
     } on BackendException catch (e) {
       if (mounted) setState(() => _cloudError = e.message);
+    } on StateError catch (_) {
+      // signInWithGoogle throws this when the interactive picker completed
+      // without an ID token -- an everyday "the user cancelled" outcome, not
+      // an edge case, so it gets the same _cloudError treatment as any other
+      // failure on this button rather than escaping the onPressed handler.
+      if (mounted) setState(() => _cloudError = 'Sign-in was cancelled.');
     }
   }
 
