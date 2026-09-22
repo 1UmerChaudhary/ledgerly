@@ -30,7 +30,12 @@ def _register_body(email: str = "rashid@example.com", **overrides: object) -> di
 
 
 async def _register(client: AsyncClient, email: str = "rashid@example.com") -> dict:
-    response = await client.post("/auth/register", json=_register_body(email))
+    # A fresh device id per registration: devices.id is the primary key, so two
+    # registrations sharing the module-level DEVICE_ID collide on the device
+    # row and surface as the users-email 409 instead.
+    body = _register_body(email)
+    body["device"] = {**body["device"], "id": str(uuid.uuid4())}
+    response = await client.post("/auth/register", json=body)
     assert response.status_code == 201, response.text
     return response.json()
 
@@ -202,3 +207,72 @@ async def test_google_link_sets_google_sub_on_the_authenticated_users_account(
         )
     assert signed_in.status_code == 201
     assert signed_in.json()["user"]["id"] == registered["user"]["id"]
+
+
+async def test_google_link_returns_409_when_that_google_account_is_already_linked(
+    client: AsyncClient,
+) -> None:
+    # users_google_sub_unique is table-wide, so linking a Google identity that
+    # already belongs to someone else is an everyday collision -- a second
+    # person on a shared machine, or a mistyped account in the picker -- not
+    # an exotic one. Every other collision path in this router answers 409;
+    # this one has to as well, or it answers 500 with a traceback.
+    first = await _register(client, email="first@example.com")
+    with patch(
+        "app.routers.auth.verify_google_id_token",
+        return_value=_fake_verified_payload("g-sub-shared", "first@example.com"),
+    ):
+        taken = await client.post(
+            "/auth/google/link",
+            json={"id_token": "fake"},
+            headers={"Authorization": f"Bearer {first['access_token']}"},
+        )
+    assert taken.status_code == 204
+
+    second = await _register(client, email="second@example.com")
+    with patch(
+        "app.routers.auth.verify_google_id_token",
+        return_value=_fake_verified_payload("g-sub-shared", "second@example.com"),
+    ):
+        response = await client.post(
+            "/auth/google/link",
+            json={"id_token": "fake"},
+            headers={"Authorization": f"Bearer {second['access_token']}"},
+        )
+
+    assert response.status_code == 409, response.text
+    assert "already" in response.json()["detail"].lower()
+
+
+async def test_a_failed_google_link_leaves_both_accounts_exactly_as_they_were(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    first = await _register(client, email="keeper@example.com")
+    with patch(
+        "app.routers.auth.verify_google_id_token",
+        return_value=_fake_verified_payload("g-sub-keeper", "keeper@example.com"),
+    ):
+        await client.post(
+            "/auth/google/link",
+            json={"id_token": "fake"},
+            headers={"Authorization": f"Bearer {first['access_token']}"},
+        )
+    second = await _register(client, email="loser@example.com")
+    with patch(
+        "app.routers.auth.verify_google_id_token",
+        return_value=_fake_verified_payload("g-sub-keeper", "loser@example.com"),
+    ):
+        await client.post(
+            "/auth/google/link",
+            json={"id_token": "fake"},
+            headers={"Authorization": f"Bearer {second['access_token']}"},
+        )
+
+    rows = (
+        await db_session.execute(
+            text("SELECT email, google_sub FROM users ORDER BY email"),
+        )
+    ).all()
+    linked = {row.email: row.google_sub for row in rows}
+    assert linked["keeper@example.com"] == "g-sub-keeper"
+    assert linked["loser@example.com"] is None

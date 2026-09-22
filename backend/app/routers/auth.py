@@ -347,6 +347,12 @@ async def google_sign_in(
     email = payload.get("email")
     email_verified = payload.get("email_verified", False)
 
+    # .one_or_none() inherited deliberately from /auth/login: a user who belongs
+    # to more than one firm makes this join return several rows and raises. The
+    # fix is not mechanical -- it is answering "which firm does an ambiguous
+    # multi-firm user sign into?", a product decision this round does not take
+    # -- and the gap predates Google sign-in rather than being introduced by it.
+    # Left visible here rather than silently inherited.
     row = (
         await db.execute(
             text(
@@ -362,6 +368,12 @@ async def google_sign_in(
         )
     ).one_or_none()
     if row is not None:
+        # Also inherited from /auth/login, and also a deliberate deferral: an
+        # existing Google user signing in from a NEW device gets tokens but no
+        # `devices` row, so body.device is dropped on this branch. Sync keys off
+        # the device id, so this is a real gap -- it is just one /auth/login has
+        # had since before this endpoint existed, and fixing it in one place
+        # only would leave the two paths disagreeing.
         return await _issue_tokens(
             db,
             user_id=str(row.id),
@@ -478,8 +490,20 @@ async def google_link(
     payload = verify_google_id_token(body.id_token)
     if not payload.get("email_verified", False):
         raise HTTPException(status_code=400, detail="Google account email is not verified.")
-    await db.execute(
-        text("UPDATE users SET google_sub = :sub WHERE id = :id AND deleted_at IS NULL"),
-        {"sub": payload["sub"], "id": current_user_id},
-    )
-    await db.commit()
+    try:
+        await db.execute(
+            text("UPDATE users SET google_sub = :sub WHERE id = :id AND deleted_at IS NULL"),
+            {"sub": payload["sub"], "id": current_user_id},
+        )
+        await db.commit()
+    except IntegrityError as e:
+        # users_google_sub_unique is table-wide, so this fires whenever the
+        # Google identity being linked already belongs to a different account
+        # -- a second person on a shared machine, the wrong entry picked in
+        # the account chooser. Everyday, and the same 409 every other
+        # collision in this router answers with.
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="That Google account is already linked to another account.",
+        ) from e
