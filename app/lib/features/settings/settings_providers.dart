@@ -41,6 +41,10 @@ final backupServiceProvider = Provider<BackupService?>((ref) {
     databaseFile: paths.firmDatabase(firm.ctx.firmId),
     localBackupDir: paths.backups,
     userBackupDir: folder == null ? null : Directory(folder),
+    // Null for an unencrypted firm, which backs up exactly as it always has.
+    // For an encrypted one the backup is ciphertext too, so the service needs
+    // the key to read back what it just wrote.
+    masterKey: ref.watch(firmMasterKeyProvider),
     now: () => DateTime.now(),
   );
 });
@@ -160,6 +164,9 @@ final restoreServiceProvider = Provider<BackupService>((ref) {
     db: firm.db,
     databaseFile: paths.firmDatabase(firm.ctx.firmId),
     localBackupDir: paths.backups,
+    // Without this an encrypted firm could not validate its own backups, so
+    // every restore would be rejected as "not a valid database file".
+    masterKey: ref.watch(firmMasterKeyProvider),
   );
 });
 

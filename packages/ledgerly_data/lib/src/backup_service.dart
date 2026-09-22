@@ -39,6 +39,7 @@ class BackupService {
     required this.localBackupDir,
     this.userBackupDir,
     this.keep = 30,
+    this.masterKey,
     DateTime Function()? now,
   }) : _now = now ?? DateTime.now;
 
@@ -47,7 +48,24 @@ class BackupService {
   final Directory localBackupDir;
   final Directory? userBackupDir;
   final int keep;
+
+  /// This session's SQLCipher master key, or null for an unencrypted firm.
+  /// `VACUUM INTO` writes its copy with the source connection's key, so a
+  /// backup of an encrypted firm is itself ciphertext: every probe connection
+  /// below has to be keyed the same way or it cannot read what it just wrote.
+  final List<int>? masterKey;
+
   final DateTime Function() _now;
+
+  /// Applies this firm's key to a freshly opened probe connection. A no-op for
+  /// an unencrypted firm, which must keep behaving exactly as it did before
+  /// encryption existed.
+  void _key(raw.Database probe) {
+    final key = masterKey;
+    if (key == null) return;
+    final hex = key.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    probe.execute('PRAGMA key = "x\'$hex\'";');
+  }
 
   String get _base => p.basenameWithoutExtension(databaseFile.path);
 
@@ -157,6 +175,15 @@ class BackupService {
       throw InvalidBackupException('That is not a valid database file.');
     }
     try {
+      // `PRAGMA key` never rejects a wrong (or missing) key by itself -- it is
+      // the first real read below that reveals one, as a plain "file is not a
+      // database". That is the same rejection an unrelated file gets, which is
+      // exactly right here: either way this file is not one we can restore.
+      try {
+        _key(probe);
+      } on raw.SqliteException {
+        throw InvalidBackupException('That is not a valid database file.');
+      }
       String check;
       try {
         check = probe.select('PRAGMA quick_check').first.values.first as String;
@@ -180,13 +207,11 @@ class BackupService {
     }
   }
 
-  static void _verify(
-    File copy, {
-    required int customers,
-    required int transactions,
-  }) {
+  /// Not static: an encrypted firm's copy only opens with [masterKey].
+  void _verify(File copy, {required int customers, required int transactions}) {
     final probe = raw.sqlite3.open(copy.path, mode: raw.OpenMode.readOnly);
     try {
+      _key(probe);
       final check = probe.select('PRAGMA quick_check').first.values.first;
       if (check != 'ok') {
         throw StateError('Backup failed integrity check: $check');
