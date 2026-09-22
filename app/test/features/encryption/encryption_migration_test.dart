@@ -446,6 +446,32 @@ void main() {
     expect(keptPlaintext().existsSync(), isTrue);
   });
 
+  test('a plaintext copy that cannot be DELETED is reported as exactly that, '
+      'not as a database that failed to verify', () async {
+    final key = await crashMigrateThenRecover();
+    // The live database is fine -- the verification above the delete proves
+    // it every time this runs. Only the unlink fails, the way it does against
+    // a file an antivirus has open or a volume mounted read-only. A caller
+    // cannot tell the two apart from a bare StateError, and the difference
+    // decides whether a healthy firm opens at all.
+    Process.runSync('chmod', ['555', paths.firms.path]);
+    try {
+      await expectLater(
+        service.retirePreEncryptionCopy(firmId, key),
+        throwsA(
+          isA<PlaintextCopyNotRetired>().having(
+            (e) => e.path,
+            'path',
+            keptPlaintext().path,
+          ),
+        ),
+      );
+      expect(keptPlaintext().existsSync(), isTrue);
+    } finally {
+      Process.runSync('chmod', ['755', paths.firms.path]);
+    }
+  }, skip: Platform.isWindows ? 'chmod does not gate unlink on Windows' : null);
+
   test('a migration whose own plaintext copy vanishes fails loudly rather '
       'than passing as a success', () async {
     await seedPlaintextFirm();

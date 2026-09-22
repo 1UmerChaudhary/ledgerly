@@ -95,12 +95,18 @@ enum FirmGate {
   ready,
 }
 
-/// [FirmGate] plus, when the answer is [FirmGate.unverifiable], what actually
-/// went wrong — so the screen that reports it can say more than "something".
+/// [FirmGate] plus, when there is one, what went wrong on the way to it — so
+/// the screen that reports it can say more than "something".
 class FirmGateStatus {
-  const FirmGateStatus(this.gate, {this.failure});
+  const FirmGateStatus(this.gate, {this.failure, this.warning});
   final FirmGate gate;
+
+  /// Why the firm is [FirmGate.unverifiable] and was not opened.
   final Object? failure;
+
+  /// Something the user should know about a firm that DID open — today, only
+  /// that a plaintext copy of the ledger is still sitting on disk.
+  final Object? warning;
 }
 
 /// Answering [FirmGate] is also the one place every firm-open passes through,
@@ -143,6 +149,14 @@ final firmGateProvider = FutureProvider<FirmGateStatus>((ref) async {
           : const FirmGateStatus(FirmGate.ready);
     }
     await encryption.retirePreEncryptionCopy(firmId, masterKey);
+  } on PlaintextCopyNotRetired catch (e) {
+    // The live database verified under this key -- that check is what runs
+    // BEFORE the delete -- and only removing the leftover plaintext copy
+    // failed: a file an antivirus has open, a read-only volume, a full disk.
+    // Refusing to open the firm over that would brick a healthy ledger for a
+    // reason that has nothing to do with it, and the next open retries the
+    // delete anyway. Open, and say what is still on disk.
+    return FirmGateStatus(FirmGate.ready, warning: e);
   } on Object catch (e) {
     return FirmGateStatus(FirmGate.unverifiable, failure: e);
   }

@@ -380,6 +380,10 @@ class FakeEncryptionService extends EncryptionService {
   /// when the live database will not verify under the key it was handed.
   Object? retireFailure;
 
+  /// Set to make [changePassphrase] fail the way the real one does when the
+  /// envelope it is rewriting has gone.
+  Object? changePassphraseFailure;
+
   /// What [recoverInterruptedMigration] should report. Set this to
   /// [RecoveryOutcome.indeterminate] to exercise the unverifiable state.
   RecoveryOutcome recoveryOutcome = RecoveryOutcome.nothingToRecover;
@@ -435,7 +439,10 @@ class FakeEncryptionService extends EncryptionService {
   ) async {
     final envelope = _envelopes[firmId];
     if (envelope == null || envelope.passphrase != passphrase) return null;
-    return envelope.masterKey;
+    // A COPY, because the real unwrapKey returns freshly allocated bytes
+    // every time -- a caller that zeroes what it was handed (the Settings
+    // dialogs do) must not be zeroing the envelope's own key.
+    return Uint8List.fromList(envelope.masterKey);
   }
 
   @override
@@ -450,7 +457,7 @@ class FakeEncryptionService extends EncryptionService {
     // A UI that does not canonicalise first fails here exactly as it would
     // against the real thing.
     if (envelope == null || envelope.recoveryCode != recoveryCode) return null;
-    return envelope.masterKey;
+    return Uint8List.fromList(envelope.masterKey);
   }
 
   @override
@@ -464,6 +471,7 @@ class FakeEncryptionService extends EncryptionService {
     if (!_sameKey(envelope.masterKey, masterKey)) {
       throw StateError('changePassphrase called with the wrong master key');
     }
+    if (changePassphraseFailure case final failure?) throw failure;
     _envelopes[firmId] = envelope.withPassphrase(newPassphrase);
   }
 

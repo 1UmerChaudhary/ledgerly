@@ -258,6 +258,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final printer = ref.watch(printerChoiceProvider);
     final cloudSession = ref.watch(cloudSessionProvider);
     final encrypted = ref.watch(firmEncryptedProvider).value ?? false;
+    final gateWarning = ref.watch(firmGateProvider).value?.warning;
     final syncStatus = ref.watch(syncRunnerProvider);
     if (firm != null) _fill(firm, folder);
 
@@ -574,6 +575,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ],
                   ]),
                   _section(context, 'Encryption', [
+                    if (gateWarning != null)
+                      Padding(
+                        padding: EdgeInsets.only(
+                          left: compact ? 0 : 130,
+                          bottom: 10,
+                        ),
+                        child: Text(
+                          '$gateWarning Delete it by hand, or open this firm '
+                          'again once whatever is holding that file has let '
+                          'go of it.',
+                          key: const Key('encryption.plaintextCopyWarning'),
+                          style: TextStyle(color: c.giveable, fontSize: 12.5),
+                        ),
+                      ),
                     _field(
                       'This firm',
                       Text(

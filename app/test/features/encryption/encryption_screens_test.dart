@@ -111,6 +111,45 @@ void main() {
   );
 
   testWidgets(
+    'once a migrated firm is showing its recovery code, the wizard says '
+    'encryption is already on rather than promising to turn it on',
+    (tester) async {
+      final encryption = FakeEncryptionService();
+      await pumpLedgerly(tester, seed: seed, encryption: encryption);
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+      await tap(tester, const Key('encryption.enableSection'));
+      await type(tester, const Key('encryption.passphrase'), 'pass phrase');
+      await type(
+        tester,
+        const Key('encryption.passphraseConfirm'),
+        'pass phrase',
+      );
+      await tap(tester, const Key('encryption.generate'));
+
+      // The database is ciphertext by now, so copy that implies otherwise
+      // would send a user away without writing the one thing down.
+      expect(await encryption.isEncrypted(testFirmId), isTrue);
+      final message = tester
+          .widget<Text>(find.byKey(const Key('encryption.codeShownMessage')))
+          .data!;
+      expect(message, contains('Encryption is now ON'));
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.byKey(const Key('encryption.confirmEnable')),
+            )
+            .child,
+        isA<Text>().having(
+          (t) => t.data,
+          'label',
+          "I've written it down — continue",
+        ),
+      );
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
     'migrating an existing firm offers, but does not force, deleting the '
     'plaintext backups it leaves behind',
     (tester) async {
@@ -330,6 +369,41 @@ void main() {
   );
 
   testWidgets(
+    'a plaintext copy that cannot be deleted does NOT block the firm — it '
+    'opens, and Settings says what is still on disk',
+    (tester) async {
+      // The live database verified under the key; only unlinking the leftover
+      // failed (antivirus, read-only volume, full disk). Refusing to open a
+      // ledger that was just proved sound, for that, would be a worse bug
+      // than the one it is guarding against.
+      final encryption = FakeEncryptionService()
+        ..encryptNow(testFirmId, passphrase: 'open sesame')
+        ..retireFailure = const PlaintextCopyNotRetired(
+          '/firms/firm.db.pre-encryption',
+          'Operation not permitted',
+        );
+      await pumpLedgerly(tester, seed: seed, encryption: encryption);
+      await type(
+        tester,
+        const Key('encryption.unlockPassphrase'),
+        'open sesame',
+      );
+      await tap(tester, const Key('encryption.unlock'));
+
+      expect(find.byKey(const Key('encryption.unverifiable')), findsNothing);
+      expect(find.byKey(const Key('dashboard.search')), findsOneWidget);
+
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+      expect(
+        find.byKey(const Key('encryption.plaintextCopyWarning')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('.pre-encryption'), findsOneWidget);
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
     'locking drops the session key and sends the app back to the unlock screen',
     (tester) async {
       final encryption = FakeEncryptionService()
@@ -409,6 +483,41 @@ void main() {
   );
 
   testWidgets(
+    'a failure inside changePassphrase is shown next to the field, not '
+    'thrown into the void',
+    (tester) async {
+      final encryption = FakeEncryptionService()
+        ..encryptNow(testFirmId, passphrase: 'old one')
+        ..changePassphraseFailure = StateError('the envelope is gone');
+      await pumpLedgerly(tester, seed: seed, encryption: encryption);
+      await type(tester, const Key('encryption.unlockPassphrase'), 'old one');
+      await tap(tester, const Key('encryption.unlock'));
+
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+      await tap(tester, const Key('encryption.changePassphrase'));
+      await type(tester, const Key('encryption.currentPassphrase'), 'old one');
+      await type(tester, const Key('encryption.newPassphrase'), 'new one');
+      await type(
+        tester,
+        const Key('encryption.newPassphraseConfirm'),
+        'new one',
+      );
+      await tap(tester, const Key('encryption.changePassphraseSubmit'));
+
+      expect(
+        find.byKey(const Key('encryption.passphraseError')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('the envelope is gone'), findsOneWidget);
+      expect(
+        find.byKey(const Key('encryption.changePassphraseDialog')),
+        findsOneWidget,
+      );
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
     'generating a new recovery code shows the new one and retires the old',
     (tester) async {
       final encryption = FakeEncryptionService();
@@ -434,6 +543,53 @@ void main() {
       );
     },
     variant: windowsOnly,
+  );
+
+  testWidgets(
+    'the first-launch encryption panel fits a phone: it scrolls, and the '
+    'irreversibility warning and the code are both reachable',
+    (tester) async {
+      // A RenderFlex overflow fails this test on its own. What it is really
+      // guarding is that the two things a user must be able to read on the
+      // smallest screen -- the warning and the code they can never see again
+      // -- are not the parts that get clipped off the bottom.
+      final encryption = FakeEncryptionService();
+      final container = await pumpLedgerly(
+        tester,
+        encryption: encryption,
+        viewSize: const Size(400, 700),
+      );
+      await type(tester, const Key('setup.firmName'), 'Al-Madina Oil Mills');
+      await type(tester, const Key('setup.contact'), '03001234567');
+      await tap(tester, const Key('setup.enableEncryption'));
+      await tester.ensureVisible(find.byKey(const Key('encryption.warning')));
+      await tester.pumpAndSettle();
+
+      await type(tester, const Key('encryption.passphrase'), 'a passphrase');
+      await type(
+        tester,
+        const Key('encryption.passphraseConfirm'),
+        'a passphrase',
+      );
+      await tap(tester, const Key('encryption.generate'));
+
+      await tester.ensureVisible(
+        find.byKey(const Key('encryption.recoveryCode')),
+      );
+      await tester.pumpAndSettle();
+      await type(
+        tester,
+        const Key('encryption.recoveryCodeConfirm'),
+        shownRecoveryCode(tester),
+      );
+      await tester.ensureVisible(find.byKey(const Key('encryption.warning')));
+      await tap(tester, const Key('encryption.confirmEnable'));
+
+      final firmId = container.read(globalPrefsProvider).lastFirmId;
+      expect(firmId, isNotNull);
+      expect(await encryption.isEncrypted(firmId!), isTrue);
+    },
+    variant: phoneOnly,
   );
 
   testWidgets(

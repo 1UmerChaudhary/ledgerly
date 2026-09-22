@@ -161,6 +161,7 @@ class EncryptionEnrolmentPanel extends StatefulWidget {
     required this.generate,
     required this.commit,
     required this.commitLabel,
+    required this.codeShownMessage,
     this.compact = false,
     this.autofocus = false,
   });
@@ -173,6 +174,15 @@ class EncryptionEnrolmentPanel extends StatefulWidget {
   final Future<void> Function(String passphrase) commit;
 
   final String commitLabel;
+
+  /// What the code step says above the code. The two callers need genuinely
+  /// different words here: for a brand-new firm nothing exists yet and this
+  /// step is still part of setting it up, while a migrated firm is ALREADY
+  /// encrypted by the time its code is on screen -- its copy has to say so,
+  /// or a user who walks away believes nothing happened and writes nothing
+  /// down.
+  final String codeShownMessage;
+
   final bool compact;
   final bool autofocus;
 
@@ -270,8 +280,8 @@ class _EncryptionEnrolmentPanelState extends State<EncryptionEnrolmentPanel> {
           ),
         ] else ...[
           Text(
-            'Write this down or print it, then type it back below. It is '
-            'shown once and never again.',
+            widget.codeShownMessage,
+            key: const Key('encryption.codeShownMessage'),
             style: TextStyle(color: c.ink2),
           ),
           const SizedBox(height: 8),
@@ -448,7 +458,20 @@ class _EncryptionSetupScreenState extends ConsumerState<EncryptionSetupScreen> {
                   EncryptionEnrolmentPanel(
                     generate: _migrate,
                     commit: _commit,
-                    commitLabel: 'Enable encryption',
+                    // Both of these are worded for what is already true by
+                    // the time this step renders: the database has been
+                    // rewritten as ciphertext and the passphrase just entered
+                    // is the one that opens it. Calling the button "Enable
+                    // encryption" here would tell a user who walks away that
+                    // nothing has happened yet -- and they would take the one
+                    // thing they can never get again, this code, with them.
+                    codeShownMessage:
+                        'Encryption is now ON for this firm, and the '
+                        'passphrase you just entered is what opens it. This '
+                        'recovery code is the only other way in, it is shown '
+                        'once, and it is never shown again. Write it down or '
+                        'print it now, then type it back below.',
+                    commitLabel: "I've written it down — continue",
                     compact: compact,
                     autofocus: true,
                   ),
@@ -562,11 +585,26 @@ class _ChangePassphraseDialogState
       });
       return;
     }
-    await encryption.changePassphrase(
-      firmId,
-      masterKey: masterKey,
-      newPassphrase: _next.text,
-    );
+    try {
+      await encryption.changePassphrase(
+        firmId,
+        masterKey: masterKey,
+        newPassphrase: _next.text,
+      );
+    } on Object catch (e) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error = '$e';
+        });
+      }
+      return;
+    } finally {
+      // Not the session key -- a second, transient copy unwrapped a few lines
+      // up purely to re-wrap under the new passphrase. Same care lockFirm
+      // takes: it does not outlive the job it was unwrapped for.
+      masterKey.fillRange(0, masterKey.length, 0);
+    }
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -671,10 +709,21 @@ class _RotateRecoveryCodeDialogState
       });
       return;
     }
-    final code = await encryption.rotateRecoveryCode(
-      firmId,
-      masterKey: masterKey,
-    );
+    final String code;
+    try {
+      code = await encryption.rotateRecoveryCode(firmId, masterKey: masterKey);
+    } on Object catch (e) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error = '$e';
+        });
+      }
+      return;
+    } finally {
+      // As above: a transient copy, zeroed the moment it has done its job.
+      masterKey.fillRange(0, masterKey.length, 0);
+    }
     if (mounted) {
       setState(() {
         _busy = false;

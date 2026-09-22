@@ -19,6 +19,26 @@ enum RecoveryOutcome {
   indeterminate,
 }
 
+/// The live database was PROVED sound, and only the plaintext copy beside it
+/// could not be deleted -- a file locked by antivirus, a read-only volume, a
+/// full disk. Kept distinct from every other way
+/// [EncryptionService.retirePreEncryptionCopy] can fail, all of which mean the
+/// database itself did not stand up: this firm is safe to open, and what is
+/// left over is a file that should not be there. A caller that treats the two
+/// alike bricks a healthy firm for a reason that has nothing to do with it.
+class PlaintextCopyNotRetired implements Exception {
+  const PlaintextCopyNotRetired(this.path, this.cause);
+
+  /// The plaintext copy still on disk.
+  final String path;
+  final Object cause;
+
+  @override
+  String toString() =>
+      'An unprotected copy of this firm is still on disk at $path, because it '
+      'could not be deleted: $cause';
+}
+
 /// The logic layer for passphrase encryption: generating/wrapping the master
 /// key, unlocking via either path, and changing either secret independently.
 /// UI screens call this, never Tasks 1-4's lower-level pieces directly.
@@ -272,7 +292,15 @@ class EncryptionService {
       keyHex: _hex(masterKey),
       tablesExpectedFrom: keptPlaintext,
     );
-    keptPlaintext.deleteSync();
+    try {
+      keptPlaintext.deleteSync();
+    } on FileSystemException catch (e) {
+      // Everything above this line passed, so the live database is sound and
+      // the firm can be opened. Only the leftover is stuck -- say exactly
+      // that, rather than throwing something indistinguishable from "this
+      // database does not decrypt".
+      throw PlaintextCopyNotRetired(keptPlaintext.path, e);
+    }
   }
 
   /// Asks the one question that never goes stale with normal use: does this
