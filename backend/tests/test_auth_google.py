@@ -127,9 +127,7 @@ async def test_google_sign_in_rejects_an_unverified_email_even_on_a_match(
 ) -> None:
     registered = await _register(client, email="unverified@example.com")
 
-    payload = _fake_verified_payload(
-        "g-sub-4", "unverified@example.com", email_verified=False
-    )
+    payload = _fake_verified_payload("g-sub-4", "unverified@example.com", email_verified=False)
     with patch("app.routers.auth.verify_google_id_token", return_value=payload):
         response = await client.post(
             "/auth/google", json=_google_body("g-sub-4", "unverified@example.com")
@@ -199,6 +197,8 @@ async def test_google_link_sets_google_sub_on_the_authenticated_users_account(
         "app.routers.auth.verify_google_id_token",
         return_value=_fake_verified_payload("g-sub-5", "linkme@example.com"),
     ):
-        signed_in = await client.post("/auth/google", json=_google_body("g-sub-5", "linkme@example.com"))
+        signed_in = await client.post(
+            "/auth/google", json=_google_body("g-sub-5", "linkme@example.com")
+        )
     assert signed_in.status_code == 201
     assert signed_in.json()["user"]["id"] == registered["user"]["id"]
