@@ -27,26 +27,28 @@ final firmMasterKeyProvider = StateProvider<Uint8List?>((ref) => null);
 
 typedef DatabaseOpener = Future<AppDatabase> Function(String firmId);
 
+/// `PRAGMA key` must run before drift touches anything else. No key set for
+/// this session means an unencrypted firm, which opens exactly as before.
+///
+/// Built here, at the top level, and never inline in the provider below:
+/// createInBackground sends this closure to another isolate, and a closure
+/// written inside the provider captures that scope's `ref` along with the key.
+/// Riverpod's Ref is unsendable, so Isolate.spawn throws before the database
+/// ever opens. Capturing nothing but the hex string keeps it sendable.
+DatabaseSetup? _keyedSetup(Uint8List? masterKey) {
+  if (masterKey == null) return null;
+  final hex = masterKey.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  return (rawDb) => rawDb.execute('PRAGMA key = "x\'$hex\'";');
+}
+
 final databaseOpenerProvider = Provider<DatabaseOpener>((ref) {
   final paths = ref.watch(appPathsProvider);
-  return (firmId) async {
-    final masterKey = ref.read(firmMasterKeyProvider);
-    return AppDatabase(
-      NativeDatabase.createInBackground(
-        paths.firmDatabase(firmId),
-        // PRAGMA key must run before drift touches anything else. No key set
-        // for this session means an unencrypted firm, which opens as before.
-        setup: masterKey == null
-            ? null
-            : (rawDb) {
-                final hex = masterKey
-                    .map((b) => b.toRadixString(16).padLeft(2, '0'))
-                    .join();
-                rawDb.execute('PRAGMA key = "x\'$hex\'";');
-              },
-      ),
-    );
-  };
+  return (firmId) async => AppDatabase(
+    NativeDatabase.createInBackground(
+      paths.firmDatabase(firmId),
+      setup: _keyedSetup(ref.read(firmMasterKeyProvider)),
+    ),
+  );
 });
 
 /// Everything a screen needs once a firm's database is open.
