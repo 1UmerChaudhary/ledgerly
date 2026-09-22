@@ -14,6 +14,7 @@ dependencies:
   uuid: ^4.6.0
   pdf: ^3.13.0
   intl: ^0.20.3
+  cryptography: ^2.9.0
 dev_dependencies:
   test: ^1.25.0
   lints: ^6.0.0
