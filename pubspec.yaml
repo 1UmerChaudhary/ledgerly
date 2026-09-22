@@ -6,3 +6,8 @@ workspace:
   - packages/ledgerly_core
   - packages/ledgerly_data
   - app
+
+hooks:
+  user_defines:
+    sqlite3:
+      source: sqlcipher
