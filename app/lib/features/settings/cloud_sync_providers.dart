@@ -141,6 +141,23 @@ class CloudSessionNotifier extends Notifier<CloudSession?> {
     state = session;
   }
 
+  /// Attaches a Google identity to the account this session already belongs
+  /// to. This is where [BackendGoogleAccountExistsException]'s instruction
+  /// ("log in with your password, then link Google sign-in from Settings")
+  /// actually leads: having logged in is the proof of account ownership the
+  /// backend deliberately refuses to infer from a matching email address.
+  Future<void> linkGoogle() async {
+    final session = state;
+    if (session == null) return;
+    final idToken = await ref.read(googleAuthenticatorProvider).signIn();
+    if (idToken == null) {
+      throw StateError('Google sign-in did not return an ID token.');
+    }
+    await ref
+        .read(backendClientProvider)
+        .linkGoogle(accessToken: session.accessToken, idToken: idToken);
+  }
+
   Future<void> logout() async {
     await ref.read(globalPrefsProvider).setCloudSession(null);
     state = null;
@@ -203,7 +220,7 @@ class SyncRunner extends Notifier<SyncStatus> {
     try {
       await _attemptSync(firm, session);
     } on BackendAuthException {
-      final refreshed = await _refreshOnce(session);
+      final refreshed = await _refreshOnce();
       if (!refreshed) {
         state = SyncStatus(
           lastAt: state.lastAt,
@@ -255,17 +272,28 @@ class SyncRunner extends Notifier<SyncStatus> {
   /// the token on every call, so a second independent refresh call would
   /// use a token the first call is about to invalidate, and itself 401,
   /// wrongly triggering a logout.
-  Future<bool> _refreshOnce(CloudSession session) {
-    return (_inFlightRefresh ??= _doRefresh(session))
+  Future<bool> _refreshOnce() {
+    return (_inFlightRefresh ??= _doRefresh())
         .then((_) => true)
         .catchError((_) => false);
   }
 
-  Future<void> _doRefresh(CloudSession session) async {
+  Future<void> _doRefresh() async {
     try {
-      final pair = await ref.read(backendClientProvider).refresh(
-        session.refreshToken,
-      );
+      // Read at the moment of the call, never captured at syncNow() entry.
+      // The single-flight guard above covers refreshes that OVERLAP; this
+      // covers the ones that merely follow. A caller that entered before
+      // another caller's refresh completed is holding a refresh token the
+      // server has already rotated away, and presenting it here is a 401 --
+      // which the caller reads as "even the refresh failed" and answers with
+      // the wrongful logout this whole path exists to prevent.
+      final session = ref.read(cloudSessionProvider);
+      if (session == null) {
+        throw StateError('No cloud session left to refresh.');
+      }
+      final pair = await ref
+          .read(backendClientProvider)
+          .refresh(session.refreshToken);
       await ref
           .read(cloudSessionProvider.notifier)
           .updateTokens(

@@ -295,4 +295,64 @@ void main() {
       expect(page.hasMore, false);
     });
   });
+
+  group('linkGoogle', () {
+    test(
+      'posts the ID token to /auth/google/link with the session bearer token',
+      () async {
+        http.Request? captured;
+        final client = BackendClient(
+          baseUrl: 'https://api.example.com',
+          httpClient: MockClient((request) async {
+            captured = request;
+            return http.Response('', 204);
+          }),
+        );
+
+        await client.linkGoogle(accessToken: 'access-1', idToken: 'google-id');
+
+        expect(captured!.url.path, '/auth/google/link');
+        expect(captured!.headers['Authorization'], 'Bearer access-1');
+        expect(jsonDecode(captured!.body), {'id_token': 'google-id'});
+      },
+    );
+
+    test('surfaces the already-linked collision as a conflict, not a generic '
+        'failure', () async {
+      final client = BackendClient(
+        baseUrl: 'https://api.example.com',
+        httpClient: MockClient(
+          (request) async => http.Response(
+            jsonEncode({
+              'detail':
+                  'That Google account is already linked to another '
+                  'account.',
+            }),
+            409,
+          ),
+        ),
+      );
+
+      expect(
+        () => client.linkGoogle(accessToken: 'a', idToken: 'g'),
+        throwsA(isA<BackendConflictException>()),
+      );
+    });
+
+    test('an expired access token is an auth failure the caller can refresh '
+        'on', () async {
+      final client = BackendClient(
+        baseUrl: 'https://api.example.com',
+        httpClient: MockClient(
+          (request) async =>
+              http.Response(jsonEncode({'detail': 'expired'}), 401),
+        ),
+      );
+
+      expect(
+        () => client.linkGoogle(accessToken: 'stale', idToken: 'g'),
+        throwsA(isA<BackendAuthException>()),
+      );
+    });
+  });
 }

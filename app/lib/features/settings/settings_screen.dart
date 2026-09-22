@@ -48,6 +48,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _loaded = false;
   String? _message;
   String? _cloudError;
+  String? _cloudMessage;
 
   @override
   void dispose() {
@@ -267,6 +268,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       // without an ID token -- an everyday "the user cancelled" outcome, not
       // an edge case, so it gets the same _cloudError treatment as any other
       // failure on this button rather than escaping the onPressed handler.
+      if (mounted) setState(() => _cloudError = 'Sign-in was cancelled.');
+    }
+  }
+
+  Future<void> _linkGoogle() async {
+    setState(() {
+      _cloudError = null;
+      _cloudMessage = null;
+    });
+    try {
+      await ref.read(cloudSessionProvider.notifier).linkGoogle();
+      if (mounted) {
+        setState(
+          () => _cloudMessage =
+              'Google sign-in is linked to this '
+              'account. You can use it to log in from now on.',
+        );
+      }
+    } on BackendException catch (e) {
+      if (mounted) setState(() => _cloudError = e.message);
+    } on StateError catch (_) {
+      // Same everyday outcome the sign-in button handles: the picker closed
+      // without producing a token.
       if (mounted) setState(() => _cloudError = 'Sign-in was cancelled.');
     }
   }
@@ -593,6 +617,42 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         ),
                         compact: compact,
                       ),
+                      // Where signInWithGoogle's "log in with your password,
+                      // then link Google sign-in from Settings" message
+                      // actually leads. Same platform gate as the sign-in
+                      // button: google_sign_in has no desktop implementation,
+                      // so there is no ID token to link with there.
+                      if (defaultTargetPlatform == TargetPlatform.android)
+                        _field(
+                          'Google',
+                          OutlinedButton(
+                            key: const Key('settings.linkGoogle'),
+                            onPressed: _linkGoogle,
+                            child: const Text('Link Google sign-in'),
+                          ),
+                          compact: compact,
+                        ),
+                      if (_cloudMessage case final m?)
+                        Padding(
+                          padding: EdgeInsets.only(left: compact ? 0 : 130),
+                          child: Text(
+                            m,
+                            key: const Key('settings.cloudMessage'),
+                            style: TextStyle(
+                              color: c.receivable,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                        ),
+                      if (_cloudError case final e?)
+                        Padding(
+                          padding: EdgeInsets.only(left: compact ? 0 : 130),
+                          child: Text(
+                            e,
+                            key: const Key('settings.cloudError'),
+                            style: TextStyle(color: c.giveable, fontSize: 12.5),
+                          ),
+                        ),
                     ],
                   ]),
                   _section(context, 'Encryption', [

@@ -327,6 +327,31 @@ class BackendClient {
     return BackendSession.fromJson(await _decode(response, expect: 201));
   }
 
+  /// Attaches a Google identity to the account this session already belongs
+  /// to — the other half of [signInWithGoogle]'s
+  /// [BackendGoogleAccountExistsException], which tells the user to log in
+  /// with their password and then link from Settings. Having logged in is
+  /// exactly the proof of ownership the backend refuses to infer from an
+  /// email address matching.
+  Future<void> linkGoogle({
+    required String accessToken,
+    required String idToken,
+  }) async {
+    final response = await _http.post(
+      _uri('/auth/google/link'),
+      headers: _authHeaders(accessToken),
+      body: jsonEncode({'id_token': idToken}),
+    );
+    // 204, so there is no body to decode — but the same status-to-exception
+    // mapping every other call gets.
+    if (response.statusCode != 204) {
+      final detail = _detailFrom(response.body);
+      if (response.statusCode == 401) throw BackendAuthException(detail);
+      if (response.statusCode == 409) throw BackendConflictException(detail);
+      throw BackendException(response.statusCode, detail);
+    }
+  }
+
   Future<BackendTokenPair> refresh(String refreshToken) async {
     final response = await _http.post(
       _uri('/auth/refresh'),
