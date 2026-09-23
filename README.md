@@ -3,7 +3,10 @@
 Offline-first ledger for small trading and processing firms. Desktop first (Windows), Android next,
 cloud sync later. Design spec: [docs/design-spec.md](docs/design-spec.md). Clickable screen mockups:
 [docs/mockups/phase1-screens.html](docs/mockups/phase1-screens.html). Windows + thermal printer
-release checklist: [docs/windows-smoke-test.md](docs/windows-smoke-test.md).
+release checklist: [docs/windows-smoke-test.md](docs/windows-smoke-test.md). What's changed release
+to release: [CHANGELOG.md](CHANGELOG.md). Toolchain setup and gotchas:
+[DEVELOPMENT.md](DEVELOPMENT.md). Latest builds:
+[github.com/1UmerChaudhary/ledgerly/releases](https://github.com/1UmerChaudhary/ledgerly/releases).
 
 ## Layout
 
