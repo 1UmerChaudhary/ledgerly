@@ -34,11 +34,25 @@ String? _phoneDigits(String query) {
 }
 
 /// Phones are stored country-code first with no trunk 0 ("923001234567"),
-/// but people type them the local way ("0300 123...") -- so a typed number
-/// also matches with its leading zeros dropped (which covers "0092..." too).
+/// but people type them the local way ("0300 123..."). A query is matched
+/// the way it was typed:
+/// - "00..." is international: the rest must start the stored number;
+/// - "0..." is local: the rest must start the national part, right after a
+///   1-3 digit country code -- anywhere else would let "0222" match
+///   0333-2222222 just because "222" appears in it;
+/// - anything else ("+92 300...", "9876") may appear anywhere.
 bool _phoneMatches(String? stored, String digits) {
   if (stored == null) return false;
-  final withoutTrunk = digits.replaceFirst(RegExp('^0+'), '');
-  return stored.contains(digits) ||
-      (withoutTrunk.isNotEmpty && stored.contains(withoutTrunk));
+  if (digits.startsWith('00')) return stored.startsWith(digits.substring(2));
+  if (digits.startsWith('0')) {
+    final national = digits.substring(1);
+    for (var codeLength = 1; codeLength <= 3; codeLength++) {
+      if (stored.length > codeLength &&
+          stored.substring(codeLength).startsWith(national)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  return stored.contains(digits);
 }

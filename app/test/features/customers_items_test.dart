@@ -101,6 +101,22 @@ void main() {
       }, variant: windowsOnly);
     }
 
+    for (final query in ['0222', '0098']) {
+      testWidgets(
+        'a local-format query "$query" matches the start of a number, not '
+        'digits buried in the middle of one',
+        (tester) async {
+          final container = await pumpLedgerly(tester, seed: seedForSearch);
+          await searchCustomers(tester, container, query);
+
+          // 0333-2222222 contains "222" and 0300-9876543 contains "0098",
+          // but neither number starts that way.
+          expect(find.byKey(const Key('customers.row')), findsNothing);
+        },
+        variant: windowsOnly,
+      );
+    }
+
     testWidgets('a half-typed full name still finds the customer', (
       tester,
     ) async {
