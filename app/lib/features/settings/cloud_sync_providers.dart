@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
@@ -5,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../../bootstrap/global_prefs.dart';
 import '../../bootstrap/providers.dart';
 import '../../sync/backend_client.dart';
+import '../../sync/backend_url.dart';
 import '../../sync/sync_service.dart';
 
 /// Real by default; overridden in tests with one built on a fake http
@@ -12,10 +14,22 @@ import '../../sync/sync_service.dart';
 /// kind of OS call that hangs in this project's sandboxed environment.
 final httpClientProvider = Provider<http.Client>((ref) => http.Client());
 
-const defaultBackendUrl = 'http://localhost:8000';
+/// The server a fresh install points at. A release build gets the real one
+/// baked in (`flutter build apk --dart-define=LEDGERLY_BACKEND_URL=https://...`)
+/// and, without it, starts empty so Settings asks for an address -- never
+/// localhost, which on a phone is the phone itself. Debug builds and tests
+/// keep the local development server.
+const defaultBackendUrl = String.fromEnvironment(
+  'LEDGERLY_BACKEND_URL',
+  defaultValue: kReleaseMode ? '' : 'http://localhost:8000',
+);
 
 final backendClientProvider = Provider<BackendClient>((ref) {
-  final url = ref.watch(globalPrefsProvider).backendUrl ?? defaultBackendUrl;
+  // Normalized here too, not only when Settings saves it: an address saved
+  // before that (say with a trailing slash) must still work.
+  final url = normalizeBackendUrl(
+    ref.watch(globalPrefsProvider).backendUrl ?? defaultBackendUrl,
+  );
   return BackendClient(baseUrl: url, httpClient: ref.watch(httpClientProvider));
 });
 

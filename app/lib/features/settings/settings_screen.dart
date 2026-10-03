@@ -14,6 +14,7 @@ import '../../printing/printing_service.dart';
 import '../../printing/thermal_printer_service.dart';
 import '../../shell/breakpoints.dart';
 import '../../sync/backend_client.dart';
+import '../../sync/backend_url.dart';
 import '../../theme/ledgerly_theme.dart';
 import '../dashboard/dashboard_screen.dart';
 import '../encryption/encryption_setup_screen.dart';
@@ -222,13 +223,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _saveBackendUrl() async {
-    final url = _backendUrl.text.trim();
+    final url = normalizeBackendUrl(_backendUrl.text);
+    _backendUrl.text = url;
     await ref.read(globalPrefsProvider).setBackendUrl(url.isEmpty ? null : url);
   }
 
-  Future<void> _register() async {
+  /// Saves the server address and says why it can't work, if it can't --
+  /// before any request goes out. False means stop: the reason is showing.
+  Future<bool> _saveCheckedBackendUrl() async {
     setState(() => _cloudError = null);
     await _saveBackendUrl();
+    final problem = backendUrlProblem(
+      _backendUrl.text,
+      isAndroid: defaultTargetPlatform == TargetPlatform.android,
+    );
+    if (problem != null) setState(() => _cloudError = problem);
+    return problem == null;
+  }
+
+  Future<void> _register() async {
+    if (!await _saveCheckedBackendUrl()) return;
     try {
       await ref
           .read(cloudSessionProvider.notifier)
@@ -244,8 +258,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _login() async {
-    setState(() => _cloudError = null);
-    await _saveBackendUrl();
+    if (!await _saveCheckedBackendUrl()) return;
     try {
       await ref
           .read(cloudSessionProvider.notifier)
@@ -257,8 +270,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _signInWithGoogle() async {
-    setState(() => _cloudError = null);
-    await _saveBackendUrl();
+    if (!await _saveCheckedBackendUrl()) return;
     try {
       await ref.read(cloudSessionProvider.notifier).signInWithGoogle();
     } on BackendException catch (e) {

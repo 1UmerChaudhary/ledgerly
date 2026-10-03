@@ -90,6 +90,9 @@ Future<ProviderContainer> pumpLedgerly(
     await seed(db, makeCtx());
     await prefs.setLastFirmId(firmId);
   }
+  // A configured server, like a real install's. The default (localhost) is
+  // only right on the developer's own machine and is refused on Android.
+  await prefs.setBackendUrl('https://ledgerly.test');
   // Real filesystem writes from the flutter_tester binary hang in this
   // sandboxed CI environment (proven by direct probing), so tests never touch
   // disk: AppPaths points somewhere inert, and the backup runner and restore

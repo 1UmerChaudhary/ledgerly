@@ -676,4 +676,88 @@ void main() {
     },
     variant: windowsOnly,
   );
+
+  testWidgets(
+    'on a phone, a localhost server address is refused with an explanation '
+    'before any request is sent',
+    (tester) async {
+      final container = await pumpLedgerly(tester, seed: seed);
+      final fakeHttp = container.read(httpClientProvider) as FakeHttpClient;
+      final requests = <http.BaseRequest>[];
+      fakeHttp.handler = (request) async {
+        requests.add(request);
+        return http.Response('{}', 500);
+      };
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+
+      await _type(
+        tester,
+        const Key('settings.backendUrl'),
+        'http://localhost:8000',
+      );
+      await _type(
+        tester,
+        const Key('settings.cloudEmail'),
+        'owner@example.com',
+      );
+      await _type(tester, const Key('settings.cloudPassword'), 'pw-123456');
+      await tester.ensureVisible(
+        find.byKey(const Key('settings.cloudRegister')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings.cloudRegister')));
+      await tester.pumpAndSettle();
+
+      expect(requests, isEmpty);
+      expect(find.byKey(const Key('settings.cloudError')), findsOneWidget);
+      expect(find.textContaining('this phone'), findsOneWidget);
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'a pasted address with a trailing slash still reaches /auth/register, '
+    'not //auth/register',
+    (tester) async {
+      final container = await pumpLedgerly(tester, seed: seed);
+      final fakeHttp = container.read(httpClientProvider) as FakeHttpClient;
+      Uri? sentTo;
+      fakeHttp.handler = (request) async {
+        sentTo = request.url;
+        return http.Response(
+          jsonEncode({
+            'access_token': 'a',
+            'refresh_token': 'r',
+            'token_type': 'bearer',
+            'user': {'id': 'u1', 'name': 'Owner', 'email': 'owner@example.com'},
+            'firm': {'id': 'f1', 'name': 'Mill'},
+          }),
+          201,
+        );
+      };
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+
+      await _type(
+        tester,
+        const Key('settings.backendUrl'),
+        'https://ledgerly.example.com/',
+      );
+      await _type(
+        tester,
+        const Key('settings.cloudEmail'),
+        'owner@example.com',
+      );
+      await _type(tester, const Key('settings.cloudPassword'), 'pw-123456');
+      await tester.ensureVisible(
+        find.byKey(const Key('settings.cloudRegister')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings.cloudRegister')));
+      await tester.pumpAndSettle();
+
+      expect(sentTo.toString(), 'https://ledgerly.example.com/auth/register');
+      expect(find.byKey(const Key('settings.cloudConnected')), findsOneWidget);
+    },
+    variant: windowsOnly,
+  );
 }
