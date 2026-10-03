@@ -13,7 +13,11 @@ class DeviceContext {
   final String firmId;
   final String deviceId;
   final String deviceShortCode;
-  final String userId;
+
+  /// Changes exactly once, if ever: when the device adopts the user id the
+  /// server assigned at sign-up (see adoptUserId). Every repository holds
+  /// this same object, so they all write with the new id from then on.
+  String userId;
   final Hlc hlc;
 
   int stamp() => hlc.next();

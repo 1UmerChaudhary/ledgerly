@@ -23,6 +23,10 @@ Future<void> seed(AppDatabase db, DeviceContext ctx) async {
 class FakeBackend {
   /// Item names in each /sync/push call, one list per call.
   final pushes = <List<String>>[];
+
+  /// Every created_by_user_id the device pushed. The real server's foreign
+  /// keys refuse any user id it didn't issue.
+  final createdBy = <String>{};
   var pulls = 0;
 
   /// Set to park the next /sync/push until completed.
@@ -46,8 +50,12 @@ class FakeBackend {
             'access_token': 'a',
             'refresh_token': 'r',
             'token_type': 'bearer',
-            'user': {'id': 'u1', 'name': 'Owner', 'email': 'owner@example.com'},
-            'firm': {'id': 'f1', 'name': 'Mill'},
+            'user': {
+              'id': testServerUserId,
+              'name': 'Owner',
+              'email': 'owner@example.com',
+            },
+            'firm': {'id': testFirmId, 'name': 'Mill'},
           }),
           201,
         );
@@ -60,6 +68,11 @@ class FakeBackend {
           final rows =
               (jsonDecode((request as http.Request).body)['rows'] as List)
                   .cast<Map<String, dynamic>>();
+          for (final row in rows) {
+            final by =
+                (row['data'] as Map<String, dynamic>)['created_by_user_id'];
+            if (by is String) createdBy.add(by);
+          }
           pushes.add([
             for (final row in rows)
               if (row['table'] == 'items')
@@ -408,6 +421,24 @@ void main() {
       await saveItem(tester, h.container, 'Sugar');
 
       expect(h.backend.pushes.last, containsAll(['Rice', 'Sugar']));
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    "after signing up, everything the device pushes -- made before or after "
+    "-- is created by the server's user, which is the only user id the "
+    "server's foreign keys accept",
+    (tester) async {
+      final h = await pumpWithBackend(tester);
+      await saveItem(tester, h.container, 'Rice'); // before the account
+      h.network.online = true;
+
+      await signIn(tester, h.container); // syncs straight away
+      await saveItem(tester, h.container, 'Sugar');
+
+      expect(h.backend.pushes.expand((p) => p), containsAll(['Rice', 'Sugar']));
+      expect(h.backend.createdBy, {testServerUserId});
     },
     variant: phoneOnly,
   );

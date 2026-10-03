@@ -7,6 +7,7 @@ export 'src/bill_codec.dart';
 export 'src/db/app_database.dart';
 export 'src/device_context.dart';
 export 'src/encryption/key_envelope_store.dart';
+export 'src/identity.dart';
 export 'src/ids.dart';
 export 'src/outbox.dart';
 export 'src/printing/ledger_pdf.dart';

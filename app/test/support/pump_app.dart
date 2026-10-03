@@ -34,6 +34,10 @@ import 'package:ledgerly_data/ledgerly_data.dart';
 /// the same id the harness is about to use.
 const testFirmId = '11111111-1111-4111-8111-111111111111';
 
+/// The user id a fake backend assigns at sign-up, as the real one does --
+/// never the device's own (see adoptUserId).
+const testServerUserId = '55555555-5555-4555-8555-555555555555';
+
 Future<ProviderContainer> pumpLedgerly(
   WidgetTester tester, {
   Future<void> Function(AppDatabase db, DeviceContext ctx)? seed,

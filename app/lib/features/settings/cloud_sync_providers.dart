@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
+import 'package:ledgerly_data/ledgerly_data.dart';
 
 import '../../bootstrap/global_prefs.dart';
 import '../../bootstrap/providers.dart';
@@ -59,6 +60,21 @@ final googleAuthenticatorProvider = Provider<GoogleAuthenticator>(
   (ref) => RealGoogleAuthenticator(),
 );
 
+/// The account signed in to belongs to a different business than the one
+/// open on this device. Pushing would be refused (the server checks the
+/// device's firm against the account's) on every sync, so sign-in stops
+/// here with words instead. Joining a phone to an existing business --
+/// downloading that business from the cloud -- isn't built yet.
+class CloudFirmMismatchException extends BackendException {
+  CloudFirmMismatchException()
+    : super(
+        409,
+        'This account belongs to a different business than the one on '
+        'this device, so it cannot sync here. Sign in with the account '
+        'that was created on this device, or create a new one.',
+      );
+}
+
 /// The signed-in cloud session, if any. Register/login write straight
 /// through to GlobalPrefs so the connection survives a restart.
 class CloudSessionNotifier extends Notifier<CloudSession?> {
@@ -90,6 +106,7 @@ class CloudSessionNotifier extends Notifier<CloudSession?> {
         shortCode: firm.ctx.deviceShortCode,
       ),
     );
+    await _adoptCloudIdentity(firm, result);
     final session = CloudSession(
       accessToken: result.accessToken,
       refreshToken: result.refreshToken,
@@ -111,6 +128,7 @@ class CloudSessionNotifier extends Notifier<CloudSession?> {
       password: password,
       deviceId: firm.ctx.deviceId,
     );
+    await _adoptCloudIdentity(firm, result);
     final session = CloudSession(
       accessToken: result.accessToken,
       refreshToken: result.refreshToken,
@@ -145,6 +163,7 @@ class CloudSessionNotifier extends Notifier<CloudSession?> {
         shortCode: firm.ctx.deviceShortCode,
       ),
     );
+    await _adoptCloudIdentity(firm, result);
     final session = CloudSession(
       accessToken: result.accessToken,
       refreshToken: result.refreshToken,
@@ -171,6 +190,16 @@ class CloudSessionNotifier extends Notifier<CloudSession?> {
     await ref
         .read(backendClientProvider)
         .linkGoogle(accessToken: session.accessToken, idToken: idToken);
+  }
+
+  /// Makes this device's firm the account's, before the session is saved:
+  /// refuses a different business, and adopts the user id the server
+  /// assigned (the device made its own owner id when the firm was created,
+  /// and the server's foreign keys accept only ids it issued -- without
+  /// this, every pushed row is rejected as "invalid").
+  Future<void> _adoptCloudIdentity(OpenFirm firm, BackendSession result) async {
+    if (result.firmId != firm.ctx.firmId) throw CloudFirmMismatchException();
+    await adoptUserId(firm.db, firm.ctx, result.userId);
   }
 
   Future<void> logout() async {
