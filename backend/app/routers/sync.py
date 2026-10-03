@@ -330,29 +330,39 @@ async def _push_customer_row(
         )
         return outcome, next_seq, []
 
+    # Only a live customer can be a duplicate. A row arriving already merged
+    # away (a device folded its copy into ours) or deleted carries a phone
+    # but claims nothing.
     phone_normalized = row.data.get("phone_normalized")
-    match = None
-    if phone_normalized:
-        match = (
+    is_live = row.data.get("merged_into_id") is None and row.data.get("deleted_at") is None
+    matches = []
+    if phone_normalized and is_live:
+        # Possibly several: two different-name customers sharing a phone are
+        # kept (both flagged), so a third arrival can match both.
+        matches = (
             await db.execute(
                 text(
-                    "SELECT id, name_normalized FROM customers "
+                    "SELECT id, name_normalized, needs_review FROM customers "
                     "WHERE firm_id = :firm_id AND phone_normalized = :phone "
-                    "AND deleted_at IS NULL AND merged_into_id IS NULL"
+                    "AND deleted_at IS NULL AND merged_into_id IS NULL "
+                    "ORDER BY created_at, id"
                 ),
                 {"firm_id": firm_id, "phone": phone_normalized},
             )
-        ).one_or_none()
+        ).all()
 
-    if match is not None and match.name_normalized == row.data.get("name_normalized"):
+    same_name = next(
+        (m for m in matches if m.name_normalized == row.data.get("name_normalized")), None
+    )
+    if same_name is not None:
         return (
             Accepted(id=row.id, updated_at=updated_at),
             next_seq,
-            [Rewrite(old_id=row.id, new_id=str(match.id))],
+            [Rewrite(old_id=row.id, new_id=str(same_name.id))],
         )
 
     insert_data = dict(row.data)
-    if match is not None:
+    if matches:
         insert_data["needs_review"] = True
     await db.execute(
         text(
@@ -371,20 +381,26 @@ async def _push_customer_row(
     )
     next_seq += 1
 
-    if match is not None:
-        await db.execute(
-            text("UPDATE customers SET needs_review = true WHERE id = :id"),
-            {"id": match.id},
-        )
-        await _record_sync_change(
-            db,
-            firm_id=firm_id,
-            seq=next_seq,
-            table_name="customers",
-            row_id=str(match.id),
-            changed_at=server_time,
-        )
-        next_seq += 1
+    # Flag every live match not flagged yet, so whoever looks at any of them
+    # sees the clash. Their sequence numbers come from a block of their own:
+    # the push reserved two per row, and several matches would overrun it
+    # into the numbers the next push reserves.
+    to_flag = [m for m in matches if not m.needs_review]
+    if to_flag:
+        flag_seq = await _reserve_sequence_block(db, firm_id, len(to_flag))
+        for offset, match in enumerate(to_flag):
+            await db.execute(
+                text("UPDATE customers SET needs_review = true WHERE id = :id"),
+                {"id": match.id},
+            )
+            await _record_sync_change(
+                db,
+                firm_id=firm_id,
+                seq=flag_seq + offset,
+                table_name="customers",
+                row_id=str(match.id),
+                changed_at=server_time,
+            )
 
     return Accepted(id=row.id, updated_at=updated_at), next_seq, []
 

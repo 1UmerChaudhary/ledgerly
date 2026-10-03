@@ -165,3 +165,100 @@ async def test_push_updates_an_existing_customer_with_a_newer_write(
         await db_session.execute(text("SELECT name FROM customers WHERE id = :id"), {"id": row_id})
     ).scalar_one()
     assert current_name == "Rashid Traders Pvt Ltd"
+
+
+async def _needs_review_by_id(db_session: AsyncSession, firm_id: str) -> dict:
+    rows = (
+        await db_session.execute(
+            text("SELECT id, needs_review FROM customers WHERE firm_id = :firm_id"),
+            {"firm_id": firm_id},
+        )
+    ).all()
+    return {str(row.id): row.needs_review for row in rows}
+
+
+async def test_a_third_customer_on_a_phone_two_already_share_is_flagged_not_a_500(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    # Devices A and B already left two flagged customers on one phone (the
+    # different-names case). Device C, offline until now, adds a third. The
+    # phone lookup used to expect at most one match and raised on two -- a
+    # 500 for the whole push, on every sync, so C could never pull again.
+    session = await _registered_session(client)
+    user = session["user"]["id"]
+    now = int(time.time() * 1000)
+    a = _customer_row(
+        name="Rashid Traders", phone="923001234567", updated_at=now, created_by_user_id=user
+    )
+    b = _customer_row(
+        name="Ahmed Brothers", phone="923001234567", updated_at=now + 1, created_by_user_id=user
+    )
+    c = _customer_row(
+        name="Karim Store", phone="923001234567", updated_at=now + 2, created_by_user_id=user
+    )
+    await _push(client, session, a)
+    await _push(client, session, b)
+
+    result = await _push(client, session, c)
+
+    assert result["accepted"] == [{"id": c["id"], "updated_at": now + 2}]
+    assert result["rewrites"] == []
+    assert await _needs_review_by_id(db_session, session["firm"]["id"]) == {
+        a["id"]: True,
+        b["id"]: True,
+        c["id"]: True,
+    }
+
+
+async def test_a_same_name_duplicate_merges_into_the_match_with_that_name(
+    client: AsyncClient,
+) -> None:
+    # Two flagged customers share the phone; the newcomer is the same person
+    # as the SECOND one. It must merge into that one, not whichever row the
+    # lookup happened to return first.
+    session = await _registered_session(client)
+    user = session["user"]["id"]
+    now = int(time.time() * 1000)
+    a = _customer_row(
+        name="Rashid Traders", phone="923001234567", updated_at=now, created_by_user_id=user
+    )
+    b = _customer_row(
+        name="Ahmed Brothers", phone="923001234567", updated_at=now + 1, created_by_user_id=user
+    )
+    again = _customer_row(
+        name="Ahmed Brothers", phone="923001234567", updated_at=now + 2, created_by_user_id=user
+    )
+    await _push(client, session, a)
+    await _push(client, session, b)
+
+    result = await _push(client, session, again)
+
+    assert result["rewrites"] == [{"old_id": again["id"], "new_id": b["id"]}]
+
+
+async def test_a_customer_already_merged_away_skips_the_phone_check(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    # A device that folded its duplicate into the server's copy pushes it
+    # with merged_into_id set. It isn't a live customer, so it must not be
+    # treated as a new duplicate of the phone it carries.
+    session = await _registered_session(client)
+    user = session["user"]["id"]
+    now = int(time.time() * 1000)
+    kept = _customer_row(
+        name="Rashid Traders", phone="923001234567", updated_at=now, created_by_user_id=user
+    )
+    await _push(client, session, kept)
+    folded = _customer_row(
+        name="Rashid Traders", phone="923001234567", updated_at=now + 1, created_by_user_id=user
+    )
+    folded["data"]["merged_into_id"] = kept["id"]
+
+    result = await _push(client, session, folded)
+
+    assert result["accepted"] == [{"id": folded["id"], "updated_at": now + 1}]
+    assert result["rewrites"] == []
+    assert await _needs_review_by_id(db_session, session["firm"]["id"]) == {
+        kept["id"]: False,
+        folded["id"]: False,
+    }
