@@ -85,9 +85,14 @@ CREATE TABLE customers (
   UNIQUE (firm_id, id)
 ) AS CustomerRow;
 CREATE INDEX idx_customers_name ON customers (firm_id, name_normalized);
--- Phone is the duplicate key. Partial so deleted and merged-away rows free the number.
+-- Phone is the duplicate key. Partial so deleted and merged-away rows free the number,
+-- and so do rows flagged needs_review: the server deliberately keeps two customers
+-- sharing a phone (different names) and flags both for a person to sort out, and a
+-- device has to be able to hold what the server holds or its pull fails forever.
+-- Creating a duplicate here is still refused -- new rows aren't flagged. (Schema 2.)
 CREATE UNIQUE INDEX idx_customers_phone ON customers (firm_id, phone_normalized)
-  WHERE deleted_at IS NULL AND merged_into_id IS NULL AND phone_normalized IS NOT NULL;
+  WHERE deleted_at IS NULL AND merged_into_id IS NULL AND phone_normalized IS NOT NULL
+    AND needs_review = 0;
 
 CREATE TABLE transactions (
   id TEXT NOT NULL PRIMARY KEY CHECK (id = lower(id) AND length(id) = 36),

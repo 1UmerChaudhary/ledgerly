@@ -65,14 +65,20 @@ class CustomersRepository {
     });
   }
 
+  /// The earliest live customer with this phone. Not "the only" one: since
+  /// schema 2 a pull can leave two sharing a phone (flagged needs_review),
+  /// and getSingleOrNull would then throw instead of naming one.
   Future<Customer?> byPhone(String phoneNormalized) async {
     final row =
-        await (db.select(db.customers)..where(
-              (c) =>
-                  c.phoneNormalized.equals(phoneNormalized) &
-                  c.deletedAt.isNull() &
-                  c.mergedIntoId.isNull(),
-            ))
+        await (db.select(db.customers)
+              ..where(
+                (c) =>
+                    c.phoneNormalized.equals(phoneNormalized) &
+                    c.deletedAt.isNull() &
+                    c.mergedIntoId.isNull(),
+              )
+              ..orderBy([(c) => OrderingTerm.asc(c.createdAt)])
+              ..limit(1))
             .getSingleOrNull();
     return row == null ? null : _toEntity(row);
   }

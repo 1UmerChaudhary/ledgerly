@@ -114,7 +114,98 @@ class SyncService {
           );
       if (!page.hasMore) break;
     }
+    await _moveBillsOffMergedCustomers();
     return pulled;
+  }
+
+  /// Repoints every bill whose customer has been merged away onto the
+  /// customer it merged into, and queues it. The server refuses a bill for
+  /// a customer it never created (an auto-merged duplicate), so such a bill
+  /// would otherwise be rejected on every push; and a merged-away customer
+  /// is hidden, so its bills would vanish from every ledger. Derived from
+  /// the rows themselves rather than remembered, so a crash between the
+  /// merge and this step just means the next pull finishes it.
+  Future<void> _moveBillsOffMergedCustomers() async {
+    final mergedInto = {
+      for (final c in await (db.select(
+        db.customers,
+      )..where((c) => c.mergedIntoId.isNotNull())).get())
+        c.id: c.mergedIntoId!,
+    };
+    if (mergedInto.isEmpty) return;
+    String survivorOf(String id) {
+      var current = id;
+      // Bounded: a merge chain (A into B into C) is short, a cycle is a bug.
+      for (var hops = 0; hops < 10; hops++) {
+        current = mergedInto[current] ?? current;
+      }
+      return current;
+    }
+
+    await db.transaction(() async {
+      final bills = await (db.select(
+        db.transactions,
+      )..where((t) => t.customerId.isIn(mergedInto.keys))).get();
+      for (final bill in bills) {
+        final stamp = ctx.stamp();
+        await (db.update(
+          db.transactions,
+        )..where((t) => t.id.equals(bill.id))).write(
+          TransactionsCompanion(
+            customerId: Value(survivorOf(bill.customerId!)),
+            updatedAt: Value(stamp),
+            updatedByDeviceId: Value(ctx.deviceId),
+            updatedByUserId: Value(ctx.userId),
+          ),
+        );
+        await enqueueOutbox(db, 'transactions', bill.id, stamp);
+      }
+    });
+  }
+
+  /// A pulled customer [id] whose phone a different live, unflagged local
+  /// customer already has -- which the device's unique-phone index would
+  /// refuse, failing this pull at this row on every sync from then on. Two
+  /// devices adding the same customer before syncing is ordinary use, and
+  /// the server accepts it, so this settles it the way the server does:
+  /// - same name: the server auto-merged them, so the local copy folds into
+  ///   the pulled one. The pulled one always survives -- it's the copy the
+  ///   server has, so a merge into it can never point at a customer the
+  ///   server lacks. The local copy's bills follow it after the pull.
+  /// - different name: the server keeps both and flags them needs_review;
+  ///   flagging the local one too lets both be held until someone decides.
+  /// The local change is queued either way, so the server hears it.
+  Future<void> _settlePhoneClash(String id, Map<String, dynamic> data) async {
+    final phone = data['phone_normalized'] as String?;
+    final indexed =
+        phone != null &&
+        data['deleted_at'] == null &&
+        data['merged_into_id'] == null &&
+        data['needs_review'] != true;
+    if (!indexed) return;
+    final clash =
+        await (db.select(db.customers)..where(
+              (c) =>
+                  c.firmId.equals(ctx.firmId) &
+                  c.phoneNormalized.equals(phone) &
+                  c.id.equals(id).not() &
+                  c.deletedAt.isNull() &
+                  c.mergedIntoId.isNull() &
+                  c.needsReview.equals(false),
+            ))
+            .getSingleOrNull();
+    if (clash == null) return;
+    final sameName = clash.nameNormalized == data['name_normalized'];
+    final stamp = ctx.stamp();
+    await (db.update(db.customers)..where((c) => c.id.equals(clash.id))).write(
+      CustomersCompanion(
+        mergedIntoId: sameName ? Value(id) : const Value.absent(),
+        needsReview: sameName ? const Value.absent() : const Value(true),
+        updatedAt: Value(stamp),
+        updatedByDeviceId: Value(ctx.deviceId),
+      ),
+    );
+    await enqueueOutbox(db, 'customers', clash.id, stamp);
   }
 
   Future<Map<String, dynamic>?> _currentRowData(String table, String id) async {
@@ -236,28 +327,34 @@ class SyncService {
             );
         return;
       case 'customers':
-        await db
-            .into(db.customers)
-            .insertOnConflictUpdate(
-              CustomersCompanion(
-                id: Value(row.id),
-                firmId: Value(ctx.firmId),
-                name: Value(data['name'] as String),
-                nameNormalized: Value(data['name_normalized'] as String),
-                phone: Value(data['phone'] as String?),
-                phoneNormalized: Value(data['phone_normalized'] as String?),
-                notes: Value(data['notes'] as String?),
-                createdByUserId: Value(data['created_by_user_id'] as String),
-                mergedIntoId: Value(data['merged_into_id'] as String?),
-                needsReview: Value(data['needs_review'] as bool),
-                createdAt: Value(data['created_at'] as int),
-                updatedAt: Value(data['updated_at'] as int),
-                updatedByDeviceId: Value(
-                  data['updated_by_device_id'] as String,
+        await db.transaction(() async {
+          // A merge points the local copy at the pulled row before that row
+          // is written, so the foreign-key check waits for the commit.
+          await db.customStatement('PRAGMA defer_foreign_keys = ON');
+          await _settlePhoneClash(row.id, data);
+          await db
+              .into(db.customers)
+              .insertOnConflictUpdate(
+                CustomersCompanion(
+                  id: Value(row.id),
+                  firmId: Value(ctx.firmId),
+                  name: Value(data['name'] as String),
+                  nameNormalized: Value(data['name_normalized'] as String),
+                  phone: Value(data['phone'] as String?),
+                  phoneNormalized: Value(data['phone_normalized'] as String?),
+                  notes: Value(data['notes'] as String?),
+                  createdByUserId: Value(data['created_by_user_id'] as String),
+                  mergedIntoId: Value(data['merged_into_id'] as String?),
+                  needsReview: Value(data['needs_review'] as bool),
+                  createdAt: Value(data['created_at'] as int),
+                  updatedAt: Value(data['updated_at'] as int),
+                  updatedByDeviceId: Value(
+                    data['updated_by_device_id'] as String,
+                  ),
+                  deletedAt: Value(data['deleted_at'] as int?),
                 ),
-                deletedAt: Value(data['deleted_at'] as int?),
-              ),
-            );
+              );
+        });
         return;
       case 'transactions':
         await db.transaction(() async {

@@ -148,7 +148,13 @@ void main() {
     expect(probe.select('SELECT count(*) AS c FROM firms').first['c'], 1);
     // drift stores its schema version here. Lose it and the next open looks
     // like a brand-new database and re-runs onCreate over a full one.
-    expect(probe.select('PRAGMA user_version').first.values.first, 1);
+    final current = AppDatabase(NativeDatabase.memory());
+    final schemaVersion = current.schemaVersion;
+    await current.close();
+    expect(
+      probe.select('PRAGMA user_version').first.values.first,
+      schemaVersion,
+    );
     probe.close();
 
     // And the same key opens it through drift itself, as the app will.

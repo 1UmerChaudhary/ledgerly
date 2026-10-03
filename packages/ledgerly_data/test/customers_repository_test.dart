@@ -35,6 +35,38 @@ void main() {
     );
   });
 
+  test(
+    'a phone already shared by two customers the server flagged for '
+    'review still blocks a third with a clear message, not a crash',
+    () async {
+      final first = await customers.create(name: 'Ali', phone: '0300-1234567');
+      // What a pull leaves behind: a second live customer with the same phone,
+      // both flagged needs_review (allowed since schema 2).
+      await db.customStatement('UPDATE customers SET needs_review = 1');
+      await db.customStatement(
+        'INSERT INTO customers (id, firm_id, name, name_normalized, phone, '
+        'phone_normalized, needs_review, created_by_user_id, created_at, '
+        'updated_at, updated_by_device_id) VALUES '
+        "('77777777-7777-4777-8777-000000000002', "
+        "'11111111-1111-4111-8111-111111111111', 'Ali Khan', 'ali khan', "
+        "'0300 1234567', '923001234567', 1, "
+        "'33333333-3333-4333-8333-333333333333', 2000, 2000, "
+        "'44444444-4444-4444-8444-444444444444')",
+      );
+
+      expect(
+        () => customers.create(name: 'Ali Raza', phone: '0300 1234567'),
+        throwsA(
+          isA<DuplicatePhoneException>().having(
+            (e) => e.existing.id,
+            'the earliest one',
+            first.id,
+          ),
+        ),
+      );
+    },
+  );
+
   test('a deleted customer frees the phone number', () async {
     final first = await customers.create(
       name: 'Old Shop',

@@ -8789,7 +8789,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   );
   late final Index idxCustomersPhone = Index(
     'idx_customers_phone',
-    'CREATE UNIQUE INDEX idx_customers_phone ON customers (firm_id, phone_normalized) WHERE deleted_at IS NULL AND merged_into_id IS NULL AND phone_normalized IS NOT NULL',
+    'CREATE UNIQUE INDEX idx_customers_phone ON customers (firm_id, phone_normalized) WHERE deleted_at IS NULL AND merged_into_id IS NULL AND phone_normalized IS NOT NULL AND needs_review = 0',
   );
   late final Transactions transactions = Transactions(this);
   late final Index idxTxnBalance = Index(

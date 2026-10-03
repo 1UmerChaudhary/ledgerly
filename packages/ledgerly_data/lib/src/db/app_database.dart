@@ -15,11 +15,19 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.executor);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) => m.createAll(),
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        // Only loosens a partial unique index (needs_review rows leave it),
+        // so it can't fail on data the stricter v1 index already allowed.
+        await m.drop(idxCustomersPhone);
+        await m.createIndex(idxCustomersPhone);
+      }
+    },
     beforeOpen: (details) async {
       // SQLite ships with foreign keys OFF; every connection must turn them on
       // or cascades and parent checks silently do nothing.
