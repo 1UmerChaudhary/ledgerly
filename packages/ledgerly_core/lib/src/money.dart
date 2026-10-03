@@ -91,3 +91,40 @@ Money? parseMoney(String input) {
       rupees * 100 + (int.parse(frac) + 5) ~/ 10; // half-up on 3rd digit
   return Money(negative ? -paisa : paisa);
 }
+
+/// One amount, optionally signed, in what [parseMoney] accepts after its
+/// cleanup; then any number of "+amount" / "-amount" terms.
+final RegExp _moneySumPattern = RegExp(
+  r'^-?\d+(?:\.\d+)?(?:[+-]\d+(?:\.\d+)?)*$',
+);
+
+/// [parseMoney], plus sums typed straight into the box: "10000+500" is
+/// 10,500 and "10000-250" is 9,750 -- for adjusting a total without working
+/// it out on the side. Each term is read exactly as [parseMoney] reads a
+/// single amount ("1,00,000", "Rs 500", "2,500.50") and the terms are added
+/// in paisa, so no rounding creeps in. Null while half-typed ("10000+") or
+/// for anything other than amounts joined by + and -.
+Money? parseMoneyExpression(String input) {
+  final cleaned = input.replaceAll(RegExp(r'[Rr][Ss]\.?|[,\s]'), '');
+  if (!_moneySumPattern.hasMatch(cleaned)) return null;
+  var total = 0;
+  for (final term in RegExp(r'[+-]?[^+-]+').allMatches(cleaned)) {
+    final text = term.group(0)!;
+    final amount = parseMoney(text.startsWith('+') ? text.substring(1) : text);
+    if (amount == null) return null;
+    total += amount.paisa;
+  }
+  return Money(total);
+}
+
+/// What a typed sum comes to, as the box should show it once the clerk
+/// moves on ("10000+500" -> "10,500") -- or null when [input] isn't a
+/// finished sum, so a plain number or a half-typed one is left as typed.
+/// Paisa are shown only when there are some, so the text never rounds the
+/// amount it stands for.
+String? moneySumText(String input) {
+  if (!input.contains(RegExp(r'\d\s*[+-]'))) return null;
+  final sum = parseMoneyExpression(input);
+  if (sum == null) return null;
+  return formatMoney(sum, symbol: false, showPaisa: sum.paisa % 100 != 0);
+}

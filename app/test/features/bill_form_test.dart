@@ -485,6 +485,113 @@ void main() {
   );
 
   testWidgets(
+    'desktop: a sum typed into a line override ("77162+838") is what the '
+    'line comes to, and leaving the cell shows the result',
+    (tester) async {
+      await pumpLedgerly(tester, seed: seedMill);
+      await pressCtrl(tester, LogicalKeyboardKey.keyN);
+      await typeInto(tester, const Key('bill.customer'), 'Rash');
+      await key(tester, LogicalKeyboardKey.enter);
+      await typeInto(tester, const Key('bill.line.0.item'), 'Oi');
+      await key(tester, LogicalKeyboardKey.enter);
+      await typeInto(tester, const Key('bill.line.0.bags'), '20');
+      await typeInto(tester, const Key('bill.line.0.rate'), '9000');
+      expect(find.text('Rs 77,162'), findsOneWidget);
+
+      await typeInto(tester, const Key('bill.line.0.override'), '77162+838');
+      expect(find.text('Rs 78,000'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('bill.line.0.rate')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<TextField>(
+              find.descendant(
+                of: find.byKey(const Key('bill.line.0.override')),
+                matching: find.byType(TextField),
+              ),
+            )
+            .controller!
+            .text,
+        '78,000',
+      );
+      expect(find.text('Rs 78,000'), findsOneWidget);
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
+    'phone: a line override can subtract too ("40000-500"), and leaving the '
+    'field shows what it came to',
+    (tester) async {
+      await pumpLedgerly(
+        tester,
+        seed: seedFirmWithItem,
+        viewSize: const Size(390, 844),
+      );
+      await tester.tap(find.byKey(const Key('shell.fab.newSale')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('bill.line.0.card.itemButton')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Oil'));
+      await tester.pumpAndSettle();
+      await typeInto(tester, const Key('bill.line.0.card.bags'), '10');
+      await typeInto(tester, const Key('bill.line.0.card.rate'), '9000');
+      // The card list builds lazily: bring the totals into view, as a
+      // phone user scrolls to them.
+      await tester.ensureVisible(
+        find.byKey(const Key('bill.line.0.card.lineTotal')),
+      );
+      await tester.pumpAndSettle();
+
+      await typeInto(
+        tester,
+        const Key('bill.line.0.card.override'),
+        '40000-500',
+      );
+      // ignore: avoid_print
+      expect(find.text('Rs 39,500'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('bill.line.0.card.rate')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<TextField>(
+              find.byKey(const Key('bill.line.0.card.override')),
+            )
+            .controller!
+            .text,
+        '39,500',
+      );
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets('the bill-level override total takes a sum too', (tester) async {
+    await pumpLedgerly(tester, seed: seedMill);
+    await pressCtrl(tester, LogicalKeyboardKey.keyN);
+    await typeInto(tester, const Key('bill.customer'), 'Rash');
+    await key(tester, LogicalKeyboardKey.enter);
+    await typeInto(tester, const Key('bill.line.0.item'), 'Oi');
+    await key(tester, LogicalKeyboardKey.enter);
+    await typeInto(tester, const Key('bill.line.0.bags'), '20');
+    await typeInto(tester, const Key('bill.line.0.rate'), '9000');
+
+    await typeInto(tester, const Key('bill.override'), '77162+838');
+    expect(find.text('Rs 78,000'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('bill.line.0.rate')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('bill.override')))
+          .controller!
+          .text,
+      '78,000',
+    );
+  }, variant: windowsOnly);
+
+  testWidgets(
     'at phone width, tapping Cancel on a dirty unsaved bill asks before discarding',
     (tester) async {
       await pumpLedgerly(

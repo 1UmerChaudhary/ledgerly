@@ -4,6 +4,7 @@ import 'package:ledgerly_core/ledgerly_core.dart';
 import '../../../theme/ledgerly_theme.dart';
 import '../bill_draft.dart';
 import 'item_search_sheet.dart';
+import 'sum_on_leave.dart';
 
 /// Touch equivalent of a grid row: one line of a bill as a tappable card
 /// instead of Tab/Enter-driven cells. Calls the exact same
@@ -111,18 +112,29 @@ class LineCard extends StatelessWidget {
               // the calculated total, before any per-line override.
               total: line.toLine(index + 1)?.calculatedTotal,
             ),
-            _numberField('override', 'Override line total', line.override),
+            _numberField(
+              'override',
+              'Override line total',
+              line.override,
+              takesSums: true,
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _numberField(String field, String label, String value) {
+  Widget _numberField(
+    String field,
+    String label,
+    String value, {
+    bool takesSums = false,
+  }) {
     return _LineCardNumberField(
       fieldKey: Key('bill.line.$index.card.$field'),
       label: label,
       value: value,
+      takesSums: takesSums,
       onChanged: (v) => onEdit(field, v),
     );
   }
@@ -172,11 +184,15 @@ class _LineCardNumberField extends StatefulWidget {
     required this.label,
     required this.value,
     required this.onChanged,
+    this.takesSums = false,
   });
   final Key fieldKey;
   final String label;
   final String value;
   final void Function(String) onChanged;
+
+  /// The override field: accepts "10000+500", shows the result on leaving.
+  final bool takesSums;
 
   @override
   State<_LineCardNumberField> createState() => _LineCardNumberFieldState();
@@ -203,11 +219,22 @@ class _LineCardNumberFieldState extends State<_LineCardNumberField> {
   }
 
   @override
-  Widget build(BuildContext context) => TextField(
-    key: widget.fieldKey,
-    controller: _controller,
-    decoration: InputDecoration(labelText: widget.label),
-    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-    onChanged: widget.onChanged,
-  );
+  Widget build(BuildContext context) {
+    final field = TextField(
+      key: widget.fieldKey,
+      controller: _controller,
+      decoration: InputDecoration(labelText: widget.label),
+      keyboardType: widget.takesSums
+          ? sumKeyboard
+          : const TextInputType.numberWithOptions(decimal: true),
+      onChanged: widget.onChanged,
+    );
+    return widget.takesSums
+        ? SumOnLeave(
+            controller: _controller,
+            onChanged: widget.onChanged,
+            child: field,
+          )
+        : field;
+  }
 }
