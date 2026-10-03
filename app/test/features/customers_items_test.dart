@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ledgerly/bootstrap/router.dart';
 import 'package:ledgerly_core/ledgerly_core.dart';
@@ -39,6 +40,41 @@ Future<void> seedWithLongName(AppDatabase db, DeviceContext ctx) async {
   await ItemsRepository(db, ctx).create(name: 'Wheat');
 }
 
+/// Two different people called "Ali" (only the phone has to be unique),
+/// each owing money so they also appear on the dashboard.
+Future<void> seedForSearch(AppDatabase db, DeviceContext ctx) async {
+  await FirmSetup(db, ctx).createFirm(name: 'Mill', contactNumber: '0300');
+  final customers = CustomersRepository(db, ctx);
+  final bills = BillsRepository(db, ctx);
+  for (final (name, phone) in [
+    ('Rashid Traders', '0300-9876543'),
+    ('Ali', '0321-1111111'),
+    ('Ali', '0333-2222222'),
+  ]) {
+    final customer = await customers.create(name: name, phone: phone);
+    await bills.saveNew(
+      Bill(
+        id: newId(),
+        customerId: customer.id,
+        type: TransactionType.openingBalance,
+        entryDate: '2026-09-01',
+        typedAmount: Money.rupees(500),
+      ),
+    );
+  }
+}
+
+Future<void> searchCustomers(
+  WidgetTester tester,
+  ProviderContainer container,
+  String query,
+) async {
+  container.read(routerProvider).go('/customers');
+  await tester.pumpAndSettle();
+  await tester.enterText(find.byKey(const Key('customers.search')), query);
+  await tester.pumpAndSettle();
+}
+
 Future<void> type(WidgetTester tester, Key key, String text) async {
   await tester.tap(find.byKey(key));
   await tester.pump();
@@ -47,6 +83,163 @@ Future<void> type(WidgetTester tester, Key key, String text) async {
 }
 
 void main() {
+  group('customers the server flagged for review', () {
+    Future<void> seedFlagged(AppDatabase db, DeviceContext ctx) async {
+      await seedForSearch(db, ctx);
+      // What a sync leaves when two devices added different names with the
+      // same phone: both kept, flagged for a person to check.
+      await db.customStatement(
+        "UPDATE customers SET needs_review = 1 WHERE name = 'Rashid Traders'",
+      );
+    }
+
+    for (final (label, size, variant) in [
+      ('desktop', const Size(1280, 800), windowsOnly),
+      ('phone', const Size(360, 780), phoneOnly),
+    ]) {
+      testWidgets('are marked in the Customers list ($label)', (tester) async {
+        final container = await pumpLedgerly(
+          tester,
+          seed: seedFlagged,
+          viewSize: size,
+        );
+        container.read(routerProvider).go('/customers');
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(
+          find.byKey(const Key('customers.needsReview')),
+          findsOneWidget,
+          reason: 'only Rashid Traders is flagged',
+        );
+        expect(
+          find.descendant(
+            of: find.ancestor(
+              of: find.text('Rashid Traders'),
+              matching: find.byKey(const Key('customers.row')),
+            ),
+            matching: find.byKey(const Key('customers.needsReview')),
+          ),
+          findsOneWidget,
+        );
+      }, variant: variant);
+    }
+  });
+
+  group('customers search', () {
+    for (final query in [
+      '0300 987',
+      '03009876543',
+      '+92 300 9876543',
+      '987654',
+    ]) {
+      testWidgets('finds a customer by phone typed as "$query"', (
+        tester,
+      ) async {
+        final container = await pumpLedgerly(tester, seed: seedForSearch);
+        await searchCustomers(tester, container, query);
+
+        expect(find.byKey(const Key('customers.row')), findsOneWidget);
+        expect(find.text('Rashid Traders'), findsOneWidget);
+      }, variant: windowsOnly);
+    }
+
+    for (final query in ['0222', '0098']) {
+      testWidgets(
+        'a local-format query "$query" matches the start of a number, not '
+        'digits buried in the middle of one',
+        (tester) async {
+          final container = await pumpLedgerly(tester, seed: seedForSearch);
+          await searchCustomers(tester, container, query);
+
+          // 0333-2222222 contains "222" and 0300-9876543 contains "0098",
+          // but neither number starts that way.
+          expect(find.byKey(const Key('customers.row')), findsNothing);
+        },
+        variant: windowsOnly,
+      );
+    }
+
+    testWidgets('a half-typed full name still finds the customer', (
+      tester,
+    ) async {
+      final container = await pumpLedgerly(tester, seed: seedForSearch);
+      await searchCustomers(tester, container, 'rashid trad');
+
+      expect(find.byKey(const Key('customers.row')), findsOneWidget);
+      expect(find.text('Rashid Traders'), findsOneWidget);
+    }, variant: windowsOnly);
+
+    testWidgets('two customers with the same name both show up', (
+      tester,
+    ) async {
+      final container = await pumpLedgerly(tester, seed: seedForSearch);
+      await searchCustomers(tester, container, 'ali');
+
+      expect(find.byKey(const Key('customers.row')), findsNWidgets(2));
+      expect(find.text('0321-1111111'), findsOneWidget);
+      expect(find.text('0333-2222222'), findsOneWidget);
+    }, variant: windowsOnly);
+
+    testWidgets(
+      'at phone width every row shows the customer name itself, not just '
+      '"..." squeezed beside the phone and balance columns',
+      (tester) async {
+        final container = await pumpLedgerly(
+          tester,
+          seed: seedForSearch,
+          viewSize: const Size(360, 780),
+        );
+        await searchCustomers(tester, container, 'ali');
+
+        // Even a three-letter name didn't fit before: the fixed 160px phone
+        // and 140px balance columns left it ~18px at 390dp and less than
+        // nothing at 360dp (the row overflowed). (The test font draws every
+        // glyph a full em wide, so longer names are no fair yardstick.)
+        expect(tester.takeException(), isNull);
+        final names = find.text('Ali');
+        expect(names, findsNWidgets(2));
+        for (final element in names.evaluate()) {
+          expect(
+            (element.renderObject! as RenderParagraph).didExceedMaxLines,
+            isFalse,
+            reason: 'the name is cut off',
+          );
+        }
+        // The phone is still shown, on its own line under the name.
+        expect(find.text('0321-1111111'), findsOneWidget);
+      },
+      variant: phoneOnly,
+    );
+
+    testWidgets(
+      'the dashboard search also finds a phone typed the local way, with '
+      'the leading 0',
+      (tester) async {
+        await pumpLedgerly(tester, seed: seedForSearch);
+        await tester.enterText(
+          find.byKey(const Key('dashboard.search')),
+          '0321 111',
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Ali'), findsOneWidget);
+        expect(find.text('Rashid Traders'), findsNothing);
+      },
+      variant: windowsOnly,
+    );
+
+    testWidgets('the dashboard search shows both customers called "Ali"', (
+      tester,
+    ) async {
+      await pumpLedgerly(tester, seed: seedForSearch);
+      await tester.enterText(find.byKey(const Key('dashboard.search')), 'ali');
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ali'), findsNWidgets(2));
+    }, variant: windowsOnly);
+  });
+
   testWidgets(
     'C opens Customers; the list shows names and phones; Ctrl+N opens the create form',
     (tester) async {

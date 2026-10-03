@@ -48,55 +48,104 @@ class FuzzyHit<T> {
   final double score;
 }
 
-/// Ranks [candidates] against [query]. A word that starts with the query
-/// outranks one that merely contains it, which outranks a misspelling match;
-/// within a tier the word closest to the query as a whole wins, then the
-/// shorter label, then alphabetical, so the order is the same every time
-/// (Dart's sort is not stable on its own).
-/// Firms have hundreds or a few thousand customers, so this runs in memory.
+/// Ranks [candidates] against [query]; see [fuzzySearchBy].
 List<FuzzyHit<String>> fuzzySearch(
   String query,
   Iterable<String> candidates, {
   double threshold = 0.55,
+}) => fuzzySearchBy(query, candidates, (c) => c, threshold: threshold);
+
+/// Ranks [items] by how well [labelOf] matches [query], returning the items
+/// themselves -- never re-looked-up by label, because two customers can
+/// share a name and a label-keyed map silently drops one of them.
+///
+/// Every word of the query must match some word of the label, in any order,
+/// so a half-typed full name ("rashid trad") still finds "Rashid Traders".
+/// Per query word: a label word starting with it outranks one merely
+/// containing it, which outranks a misspelling match. A candidate ranks by
+/// its weakest word; ties go to the closest overall, then the shorter label,
+/// then alphabetical, then input order, so the order is the same every time
+/// (Dart's sort is not stable on its own).
+/// Firms have hundreds or a few thousand customers, so this runs in memory.
+List<FuzzyHit<T>> fuzzySearchBy<T>(
+  String query,
+  Iterable<T> items,
+  String Function(T) labelOf, {
+  double threshold = 0.55,
 }) {
-  final q = normalizeName(query);
-  if (q.isEmpty) return candidates.map((c) => FuzzyHit(c, 1.0)).toList();
-  // Rank tiers: 2 = a word starts with the query, 1 = a word contains it,
-  // 0 = merely similar (misspelling). Within a tier, whole-word closeness.
-  final ranked = <(String, int, double)>[];
-  for (final c in candidates) {
-    var tier = 0;
-    var best = 0.0;
-    for (final w in normalizeName(c).split(' ')) {
-      final int t;
-      final double score;
-      if (w.startsWith(q)) {
-        t = 2;
-        score = similarity(q, w);
-      } else if (w.contains(q)) {
-        t = 1;
-        score = similarity(q, w);
-      } else {
-        t = 0;
-        score = similarity(
-          q,
-          w.length > q.length + 2 ? w.substring(0, q.length + 2) : w,
-        );
+  final queryWords = normalizeName(query)
+      .split(' ')
+      .where((w) => w.isNotEmpty)
+      .toList();
+  if (queryWords.isEmpty) return [for (final i in items) FuzzyHit(i, 1.0)];
+  final ranked = <({T item, String label, int tier, double score, int at})>[];
+  var at = 0;
+  for (final item in items) {
+    final label = labelOf(item);
+    final labelWords = normalizeName(label).split(' ');
+    var tier = 2;
+    var total = 0.0;
+    var matched = true;
+    for (final q in queryWords) {
+      final (t, score) = _bestWordMatch(q, labelWords);
+      if (t == 0 && score < threshold) {
+        matched = false;
+        break;
       }
-      if (t > tier || (t == tier && score > best)) {
-        tier = t;
-        best = score;
-      }
+      if (t < tier) tier = t;
+      total += score;
     }
-    if (tier > 0 || best >= threshold) ranked.add((c, tier, best));
+    if (matched) {
+      ranked.add((
+        item: item,
+        label: label,
+        tier: tier,
+        score: total / queryWords.length,
+        at: at,
+      ));
+    }
+    at++;
   }
   ranked.sort((a, b) {
-    if (a.$2 != b.$2) return b.$2.compareTo(a.$2);
-    if (a.$3 != b.$3) return b.$3.compareTo(a.$3);
-    if (a.$1.length != b.$1.length) return a.$1.length.compareTo(b.$1.length);
-    return a.$1.compareTo(b.$1);
+    if (a.tier != b.tier) return b.tier.compareTo(a.tier);
+    if (a.score != b.score) return b.score.compareTo(a.score);
+    if (a.label.length != b.label.length) {
+      return a.label.length.compareTo(b.label.length);
+    }
+    final byLabel = a.label.compareTo(b.label);
+    return byLabel != 0 ? byLabel : a.at.compareTo(b.at);
   });
-  return [for (final r in ranked) FuzzyHit(r.$1, r.$2 > 0 ? 1.0 : r.$3)];
+  return [for (final r in ranked) FuzzyHit(r.item, r.tier > 0 ? 1.0 : r.score)];
+}
+
+/// The best match of one query word [q] against a label's words, as
+/// (tier, closeness). Tiers: 2 = a word starts with [q], 1 = a word
+/// contains it, 0 = merely similar (misspelling).
+(int, double) _bestWordMatch(String q, List<String> words) {
+  var tier = 0;
+  var best = 0.0;
+  for (final w in words) {
+    final int t;
+    final double score;
+    if (w.startsWith(q)) {
+      t = 2;
+      score = similarity(q, w);
+    } else if (w.contains(q)) {
+      t = 1;
+      score = similarity(q, w);
+    } else {
+      t = 0;
+      score = similarity(
+        q,
+        w.length > q.length + 2 ? w.substring(0, q.length + 2) : w,
+      );
+    }
+    if (t > tier || (t == tier && score > best)) {
+      tier = t;
+      best = score;
+    }
+  }
+  return (tier, best);
 }
 
 /// 1.0 for identical strings, falling towards 0 with each edit (insert, delete,

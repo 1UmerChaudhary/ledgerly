@@ -92,6 +92,45 @@ void main() {
       expect(fuzzySearch('', names).map((h) => h.value), names);
     });
 
+    test('a partly typed full name still finds it -- every query word '
+        'must match some word of the name, in any order', () {
+      for (final q in [
+        'rashid trad',
+        'Rashid Traders',
+        'trad rash',
+        'rashd trad',
+      ]) {
+        expect(
+          fuzzySearch(q, names).map((h) => h.value),
+          contains('Rashid Traders'),
+          reason: q,
+        );
+      }
+      // ...and a word the name doesn't have rules it out.
+      expect(
+        fuzzySearch('rashid store', names).map((h) => h.value),
+        isNot(contains('Rashid Traders')),
+      );
+    });
+
+    test('ranks a candidate matching every word as a prefix above weaker '
+        'matches', () {
+      final hits = fuzzySearch('ali trad', [
+        'Muhammad Ali Traders',
+        'Ali Traders',
+        'Alishan Trading Co',
+      ]).map((h) => h.value).toList();
+      expect(hits.first, 'Ali Traders');
+      expect(hits, containsAll(['Muhammad Ali Traders', 'Alishan Trading Co']));
+    });
+
+    test('fuzzySearchBy keeps two items with the same label apart -- two '
+        'customers can share a name', () {
+      final items = [(1, 'Ali'), (2, 'Bilal'), (3, 'Ali')];
+      final hits = fuzzySearchBy('ali', items, (i) => i.$2);
+      expect(hits.map((h) => h.value.$1), [1, 3]);
+    });
+
     test('similarity is 1 for identical and 0 for unrelated strings', () {
       expect(similarity('rashid', 'rashid'), 1.0);
       expect(similarity('rashid', 'xyzqw'), lessThan(0.3));
