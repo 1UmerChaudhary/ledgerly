@@ -12,6 +12,7 @@ import 'bill_draft.dart';
 import 'widgets/date_field.dart';
 import 'widgets/entity_autocomplete.dart';
 import 'widgets/line_card.dart';
+import 'widgets/sum_on_leave.dart';
 
 TransactionType _typeFrom(String s) => switch (s) {
   'purchase' => TransactionType.purchase,
@@ -795,6 +796,7 @@ class _LineRow extends StatelessWidget {
                 focusNode: focusFor(key),
                 value: value ?? '',
                 enabled: enabled,
+                takesSums: field == 'override',
                 onChanged: (v) => onEdit(index, field, v),
               ),
             ),
@@ -932,11 +934,15 @@ class _CellField extends StatefulWidget {
     required this.value,
     required this.enabled,
     required this.onChanged,
+    this.takesSums = false,
   });
   final FocusNode focusNode;
   final String value;
   final bool enabled;
   final void Function(String) onChanged;
+
+  /// An override cell: accepts "10000+500" and shows the result on leaving.
+  final bool takesSums;
 
   @override
   State<_CellField> createState() => _CellFieldState();
@@ -963,18 +969,28 @@ class _CellFieldState extends State<_CellField> {
   }
 
   @override
-  Widget build(BuildContext context) => TextField(
-    controller: _controller,
-    focusNode: widget.focusNode,
-    enabled: widget.enabled,
-    textAlign: TextAlign.right,
-    style: numberStyle.copyWith(fontSize: 13.5),
-    onChanged: widget.onChanged,
-    decoration: const InputDecoration(
-      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      isDense: true,
-    ),
-  );
+  Widget build(BuildContext context) {
+    final field = TextField(
+      controller: _controller,
+      focusNode: widget.focusNode,
+      enabled: widget.enabled,
+      textAlign: TextAlign.right,
+      style: numberStyle.copyWith(fontSize: 13.5),
+      keyboardType: widget.takesSums ? sumKeyboard : null,
+      onChanged: widget.onChanged,
+      decoration: const InputDecoration(
+        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        isDense: true,
+      ),
+    );
+    return widget.takesSums
+        ? SumOnLeave(
+            controller: _controller,
+            onChanged: widget.onChanged,
+            child: field,
+          )
+        : field;
+  }
 }
 
 class _ModeCell extends StatelessWidget {
@@ -1093,21 +1109,9 @@ class _Totals extends StatelessWidget {
             'Override total',
             SizedBox(
               width: 130,
-              child: TextField(
-                key: const Key('bill.override'),
-                textAlign: TextAlign.right,
-                style: numberStyle.copyWith(fontSize: 13.5),
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
+              child: _OverrideTotalField(
+                value: d.overrideText,
                 onChanged: onOverride,
-                decoration: const InputDecoration(
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 6,
-                  ),
-                  isDense: true,
-                ),
               ),
             ),
           ),
@@ -1252,4 +1256,55 @@ class _SavedBanner extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The bill-level override total. Stateful so it can hold a controller:
+/// it takes sums ("77162+838") and shows the result on leaving (see
+/// [SumOnLeave]), which means writing back into its own text.
+class _OverrideTotalField extends StatefulWidget {
+  const _OverrideTotalField({required this.value, required this.onChanged});
+  final String value;
+  final void Function(String) onChanged;
+
+  @override
+  State<_OverrideTotalField> createState() => _OverrideTotalFieldState();
+}
+
+class _OverrideTotalFieldState extends State<_OverrideTotalField> {
+  late final _controller = TextEditingController(text: widget.value);
+
+  @override
+  void didUpdateWidget(covariant _OverrideTotalField old) {
+    super.didUpdateWidget(old);
+    if (widget.value != _controller.text) {
+      _controller.value = TextEditingValue(
+        text: widget.value,
+        selection: TextSelection.collapsed(offset: widget.value.length),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SumOnLeave(
+    controller: _controller,
+    onChanged: widget.onChanged,
+    child: TextField(
+      key: const Key('bill.override'),
+      controller: _controller,
+      textAlign: TextAlign.right,
+      style: numberStyle.copyWith(fontSize: 13.5),
+      keyboardType: sumKeyboard,
+      onChanged: widget.onChanged,
+      decoration: const InputDecoration(
+        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        isDense: true,
+      ),
+    ),
+  );
 }

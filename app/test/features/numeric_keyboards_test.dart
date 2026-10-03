@@ -45,7 +45,8 @@ void main() {
     expect(_keyboardOf(tester, 'cash.amount'), _decimal);
   }, variant: phoneOnly);
 
-  testWidgets('the bill override-total field raises the decimal pad', (
+  testWidgets('the override fields raise the phone pad: they take sums like '
+      '"10000+500", and the decimal pad has no + key on most keyboards', (
     tester,
   ) async {
     final container = await pumpLedgerly(
@@ -55,9 +56,14 @@ void main() {
     );
     container.read(routerProvider).go('/bills/new?type=sale');
     await tester.pumpAndSettle();
-    await _scrollTo(tester, 'bill.override');
 
-    expect(_keyboardOf(tester, 'bill.override'), _decimal);
+    await _scrollTo(tester, 'bill.line.0.card.override');
+    expect(
+      _keyboardOf(tester, 'bill.line.0.card.override'),
+      TextInputType.phone,
+    );
+    await _scrollTo(tester, 'bill.override');
+    expect(_keyboardOf(tester, 'bill.override'), TextInputType.phone);
   }, variant: phoneOnly);
 
   testWidgets('the item form weight and rate fields raise the decimal pad', (

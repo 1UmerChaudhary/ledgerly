@@ -60,7 +60,7 @@ class LineDraft {
     if (mode == SaleMode.byBags && (bagCount == null || bagCount! <= 0)) {
       return null;
     }
-    final ov = parseMoney(override);
+    final ov = parseMoneyExpression(override);
     return BillLine(
       id: id,
       lineNo: lineNo,
@@ -147,7 +147,7 @@ class BillDraft {
       : (parseMoney(amountText) ?? Money.zero);
 
   Money get finalAmount => hasLines
-      ? (parseMoney(overrideText) ?? calculatedTotal)
+      ? (parseMoneyExpression(overrideText) ?? calculatedTotal)
       : calculatedTotal;
 
   /// Signed effect on the customer's balance, or null while the amount is invalid.
@@ -355,7 +355,7 @@ class BillDraftController extends Notifier<BillDraft> {
       state = d.copyWith(error: 'The amount must be greater than zero.');
       return null;
     }
-    final override = d.hasLines ? parseMoney(d.overrideText) : null;
+    final override = d.hasLines ? parseMoneyExpression(d.overrideText) : null;
     final editing = d.editing;
     final bill = Bill(
       id: editing?.id ?? newId(),
