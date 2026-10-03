@@ -8,6 +8,7 @@ import '../../shell/breakpoints.dart';
 import '../../theme/ledgerly_theme.dart';
 import '../bills/bill_draft.dart';
 import '../dashboard/dashboard_screen.dart';
+import 'customer_search.dart';
 
 /// All customers, including those with a zero balance (the dashboard only
 /// shows balances). Ctrl+N adds one; Enter opens the ledger.
@@ -38,13 +39,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
           in ref.watch(dashboardRowsProvider).value ?? const <DashboardRow>[])
         r.customer.id: r.balance,
     };
-    final byName = {for (final x in all) x.name: x};
-    final visible = _query.trim().isEmpty
-        ? all
-        : fuzzySearch(
-            _query,
-            byName.keys,
-          ).map((h) => byName[h.value]!).toList();
+    final visible = searchCustomers(_query, all, (c) => c);
 
     // Measured from the constraints this screen is handed, not MediaQuery's
     // window width: above kCompactBreakpoint AppShell puts a 96px rail
@@ -141,50 +136,42 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                                   bottom: BorderSide(color: c.ruleSoft),
                                 ),
                               ),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      cu.name,
-                                      // A long name has nowhere near enough
-                                      // room next to the two fixed phone/
-                                      // balance columns -- without this it
-                                      // wraps character-by-character down the
-                                      // row instead of truncating cleanly.
-                                      overflow: TextOverflow.ellipsis,
-                                      maxLines: 1,
-                                      style: const TextStyle(fontSize: 13.5),
+                              child: compact
+                                  ? _compactRow(context, cu, b)
+                                  : Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            cu.name,
+                                            // A long name has nowhere near
+                                            // enough room next to the two
+                                            // fixed phone/balance columns --
+                                            // without this it wraps
+                                            // character-by-character down
+                                            // the row instead of truncating.
+                                            overflow: TextOverflow.ellipsis,
+                                            maxLines: 1,
+                                            style: const TextStyle(
+                                              fontSize: 13.5,
+                                            ),
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          width: 160,
+                                          child: Text(
+                                            cu.phone ?? '',
+                                            style: numberStyle.copyWith(
+                                              fontSize: 12.5,
+                                              color: c.ink2,
+                                            ),
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          width: 140,
+                                          child: _balanceText(context, b),
+                                        ),
+                                      ],
                                     ),
-                                  ),
-                                  SizedBox(
-                                    width: 160,
-                                    child: Text(
-                                      cu.phone ?? '',
-                                      style: numberStyle.copyWith(
-                                        fontSize: 12.5,
-                                        color: c.ink2,
-                                      ),
-                                    ),
-                                  ),
-                                  SizedBox(
-                                    width: 140,
-                                    child: Text(
-                                      b.isZero
-                                          ? '—'
-                                          : '${b.isNegative ? 'is owed' : 'owes'} ${formatMoney(b.abs(), symbol: false)}',
-                                      textAlign: TextAlign.right,
-                                      style: numberStyle.copyWith(
-                                        fontSize: 13,
-                                        color: b.isNegative
-                                            ? c.giveable
-                                            : (b.isZero
-                                                  ? c.ink3
-                                                  : c.receivable),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
                             ),
                           );
                         },
@@ -197,6 +184,56 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
           ),
         );
       },
+    );
+  }
+
+  /// Below [kCompactBreakpoint] the desktop row's fixed 160px phone and
+  /// 140px balance columns alone are wider than what a phone leaves for the
+  /// row, so the name got nothing and showed as "..." (or overflowed). Here
+  /// the name takes the width, the phone sits under it, and the balance
+  /// takes only what its text needs.
+  Widget _compactRow(BuildContext context, Customer cu, Money balance) {
+    final c = context.colors;
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                cu.name,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              if (cu.phone case final phone? when phone.isNotEmpty)
+                Text(
+                  phone,
+                  style: numberStyle.copyWith(fontSize: 12, color: c.ink2),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        _balanceText(context, balance),
+      ],
+    );
+  }
+
+  Widget _balanceText(BuildContext context, Money b) {
+    final c = context.colors;
+    return Text(
+      b.isZero
+          ? '—'
+          : '${b.isNegative ? 'is owed' : 'owes'} ${formatMoney(b.abs(), symbol: false)}',
+      textAlign: TextAlign.right,
+      style: numberStyle.copyWith(
+        fontSize: 13,
+        color: b.isNegative ? c.giveable : (b.isZero ? c.ink3 : c.receivable),
+      ),
     );
   }
 

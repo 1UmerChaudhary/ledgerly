@@ -77,11 +77,11 @@ class _EntityAutocompleteState<T> extends State<EntityAutocomplete<T>> {
 
   void _search(String query) {
     _typing = true;
-    final byLabel = {for (final o in widget.options) widget.labelOf(o): o};
-    final hits = fuzzySearch(
-      query,
-      byLabel.keys,
-    ).map((h) => byLabel[h.value]!).toList();
+    // By item, not by label: two customers (or items) can share a name.
+    final hits = [
+      for (final hit in fuzzySearchBy(query, widget.options, widget.labelOf))
+        hit.value,
+    ];
     setState(() {
       _matches = query.trim().isEmpty ? const [] : hits.take(8).toList();
       _highlight = 0;
@@ -151,54 +151,60 @@ class _EntityAutocompleteState<T> extends State<EntityAutocomplete<T>> {
             targetAnchor: Alignment.bottomLeft,
             followerAnchor: Alignment.topLeft,
             offset: const Offset(0, 4),
-            child: Material(
-              elevation: 6,
-              borderRadius: BorderRadius.circular(4),
-              color: c.surface,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (var i = 0; i < _matches.length; i++)
-                    InkWell(
-                      onTap: () => _pick(_matches[i]),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 7,
-                        ),
-                        decoration: BoxDecoration(
-                          color: i == _highlight ? c.selection : null,
-                          border: Border(
-                            left: BorderSide(
-                              color: i == _highlight
-                                  ? c.accent
-                                  : Colors.transparent,
-                              width: 3,
+            // Taps on the list count as taps inside the field. Without this,
+            // on desktop a click on a suggestion first unfocuses the field
+            // ("tap outside"), the focus listener empties _matches, and the
+            // click then indexes an empty list -- a mouse could never pick.
+            child: TextFieldTapRegion(
+              child: Material(
+                elevation: 6,
+                borderRadius: BorderRadius.circular(4),
+                color: c.surface,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 0; i < _matches.length; i++)
+                      InkWell(
+                        onTap: () => _pick(_matches[i]),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 7,
+                          ),
+                          decoration: BoxDecoration(
+                            color: i == _highlight ? c.selection : null,
+                            border: Border(
+                              left: BorderSide(
+                                color: i == _highlight
+                                    ? c.accent
+                                    : Colors.transparent,
+                                width: 3,
+                              ),
                             ),
                           ),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                widget.labelOf(_matches[i]),
-                                style: const TextStyle(fontSize: 13),
-                              ),
-                            ),
-                            if (widget.trailingOf?.call(_matches[i])
-                                case final t?)
-                              Text(
-                                t,
-                                style: numberStyle.copyWith(
-                                  fontSize: 12.5,
-                                  color: c.ink2,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  widget.labelOf(_matches[i]),
+                                  style: const TextStyle(fontSize: 13),
                                 ),
                               ),
-                          ],
+                              if (widget.trailingOf?.call(_matches[i])
+                                  case final t?)
+                                Text(
+                                  t,
+                                  style: numberStyle.copyWith(
+                                    fontSize: 12.5,
+                                    color: c.ink2,
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

@@ -6,6 +6,7 @@ import 'package:ledgerly_core/ledgerly_core.dart';
 
 import '../../bootstrap/providers.dart';
 import '../../l10n/app_localizations.dart';
+import '../customers/customer_search.dart';
 import '../../shell/breakpoints.dart';
 import '../settings/settings_providers.dart';
 import '../../theme/ledgerly_theme.dart';
@@ -58,22 +59,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     super.dispose();
   }
 
-  List<DashboardRow> _filter(List<DashboardRow> rows, String query) {
-    if (query.trim().isEmpty) return rows;
-    final byName = {for (final r in rows) r.customer.name: r};
-    final digits = query.replaceAll(RegExp(r'\D'), '');
-    if (digits.length >= 4 &&
-        digits.length == query.replaceAll(RegExp(r'[\s\-+]'), '').length) {
-      return rows
-          .where((r) => (r.customer.phoneNormalized ?? '').contains(digits))
-          .toList();
-    }
-    return fuzzySearch(
-      query,
-      byName.keys,
-    ).map((h) => byName[h.value]!).toList();
-  }
-
   void _open(List<DashboardRow> visible) {
     if (visible.isEmpty) return;
     final row = visible[_selected.clamp(0, visible.length - 1)];
@@ -119,7 +104,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final rows =
         ref.watch(dashboardRowsProvider).value ?? const <DashboardRow>[];
     final query = ref.watch(searchQueryProvider);
-    final visible = _filter(rows, query);
+    final visible = searchCustomers(query, rows, (r) => r.customer);
     final receivables = visible.where((r) => r.balance.isPositive).toList();
     final giveables = visible.where((r) => r.balance.isNegative).toList();
     // One selection index runs down receivables then giveables.
