@@ -2,6 +2,35 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+/// Long enough for a free-tier server waking from sleep (~30-60 s), short
+/// enough that a half-open socket can't hold up every later sync for good.
+const backendRequestTimeout = Duration(seconds: 90);
+
+/// No answer within [backendRequestTimeout]. An Exception like the rest, so
+/// a sync that hits it fails visibly and the next trigger simply retries.
+class BackendTimeoutException implements Exception {
+  @override
+  String toString() =>
+      'The server did not answer within ${backendRequestTimeout.inSeconds} s.';
+}
+
+/// Every request gets [backendRequestTimeout]. Dart's HttpClient has none
+/// of its own, and sync is single-flight: one request hung on a half-open
+/// socket would otherwise hold up every later sync until the app restarts.
+/// Times the wait for the response headers; the bodies here are small.
+class _TimeoutClient extends http.BaseClient {
+  _TimeoutClient(this._inner);
+  final http.Client _inner;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) => _inner
+      .send(request)
+      .timeout(
+        backendRequestTimeout,
+        onTimeout: () => throw BackendTimeoutException(),
+      );
+}
+
 /// Thrown for any non-2xx response the caller can't recover from generically.
 class BackendException implements Exception {
   BackendException(this.statusCode, this.message);
@@ -226,7 +255,7 @@ class BackendPullPage {
 /// file pickers.
 class BackendClient {
   BackendClient({required this.baseUrl, required http.Client httpClient})
-    : _http = httpClient;
+    : _http = _TimeoutClient(httpClient);
 
   final String baseUrl;
   final http.Client _http;

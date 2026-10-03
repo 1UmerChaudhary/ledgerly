@@ -203,9 +203,10 @@ class SyncStatus {
 
 /// Runs push-then-pull against the currently signed-in session. On an
 /// expired access token (401), silently refreshes once and retries before
-/// giving up and logging the user out — see [_refreshOnce] for why
-/// concurrent callers share a single in-flight refresh instead of each
-/// calling /auth/refresh independently.
+/// giving up and logging the user out. Since [syncNow] became single-flight
+/// two syncs never overlap, so [_refreshOnce]'s own single-flight guard can
+/// no longer be raced from here; it stays as a cheap backstop for any
+/// future caller of a refresh.
 class SyncRunner extends Notifier<SyncStatus> {
   @override
   SyncStatus build() => const SyncStatus();
@@ -240,9 +241,25 @@ class SyncRunner extends Notifier<SyncStatus> {
 
   Future<void> _syncOnce() async {
     final session = ref.read(cloudSessionProvider);
-    final firm = ref.read(openFirmProvider).value;
+    // Never a reloading firm: while openFirmProvider reloads (restore, lock,
+    // enabling encryption) `.value` still hands back the previous firm,
+    // whose database has already been closed.
+    final firmState = ref.read(openFirmProvider);
+    final firm = firmState.isLoading ? null : firmState.value;
     if (session == null || firm == null) return;
     state = SyncStatus(running: true, lastAt: state.lastAt);
+    try {
+      await _syncRefreshingOnce(firm, session);
+    } on Object catch (e) {
+      // Object, not just Exception: an Error (a malformed page failing a
+      // cast, the database closed mid-sync for a restore) must still clear
+      // `running` -- or Sync now stays disabled with no message -- and must
+      // not end the rerun loop in syncNow().
+      state = SyncStatus(lastAt: state.lastAt, error: 'Sync failed: $e');
+    }
+  }
+
+  Future<void> _syncRefreshingOnce(OpenFirm firm, CloudSession session) async {
     try {
       await _attemptSync(firm, session);
     } on BackendAuthException {
@@ -265,8 +282,6 @@ class SyncRunner extends Notifier<SyncStatus> {
         );
         await ref.read(cloudSessionProvider.notifier).logout();
       }
-    } on Exception catch (e) {
-      state = SyncStatus(lastAt: state.lastAt, error: 'Sync failed: $e');
     }
   }
 

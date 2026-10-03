@@ -405,6 +405,10 @@ class FakeNetworkMonitor implements NetworkMonitor {
   bool online = false;
   final _changes = StreamController<bool>.broadcast();
 
+  /// Whether anything is still subscribed -- how a test proves auto-sync
+  /// actually tore its triggers down rather than just finding nothing to do.
+  bool get hasListener => _changes.hasListener;
+
   void goOnline() {
     online = true;
     _changes.add(true);
@@ -418,8 +422,14 @@ class FakeNetworkMonitor implements NetworkMonitor {
   @override
   Future<bool> isOnline() async => online;
 
+  /// Like the real plugin, reports the current state to each new subscriber
+  /// straight away, before any actual change.
   @override
-  Stream<bool> get onlineChanges => _changes.stream;
+  Stream<bool> get onlineChanges => Stream.multi((subscriber) {
+    subscriber.add(online);
+    final changes = _changes.stream.listen(subscriber.add);
+    subscriber.onCancel = changes.cancel;
+  });
 }
 
 /// Stands in for [SyncTicker]: a real periodic timer still running when a
@@ -429,6 +439,8 @@ class FakeSyncTicker implements SyncTicker {
   final _ticks = StreamController<void>.broadcast();
 
   void tick() => _ticks.add(null);
+
+  bool get hasListener => _ticks.hasListener;
 
   @override
   Stream<void> get ticks => _ticks.stream;

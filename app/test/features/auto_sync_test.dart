@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:ledgerly/bootstrap/providers.dart';
 import 'package:ledgerly/features/settings/cloud_sync_providers.dart';
+import 'package:ledgerly/sync/backend_client.dart';
 import 'package:ledgerly/sync/auto_sync.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 
@@ -26,6 +27,14 @@ class FakeBackend {
 
   /// Set to park the next /sync/push until completed.
   Completer<void>? holdPush;
+
+  /// Set to make every /sync/push hang forever, like a half-open socket.
+  var hangPushes = false;
+
+  /// What /sync/pull reports as its cursor. Null reproduces a malformed
+  /// page, which fails the cast in BackendPullPage with a TypeError -- an
+  /// Error, not an Exception.
+  Object? pullCursor = 0;
   var _pushesInFlight = 0;
   var maxPushesInFlight = 0;
 
@@ -56,6 +65,7 @@ class FakeBackend {
               if (row['table'] == 'items')
                 (row['data'] as Map<String, dynamic>)['name'] as String,
           ]);
+          if (hangPushes) await Completer<void>().future;
           if (holdPush case final hold?) {
             holdPush = null;
             await hold.future;
@@ -82,7 +92,11 @@ class FakeBackend {
       case '/sync/pull':
         pulls++;
         return http.Response(
-          jsonEncode({'rows': [], 'next_cursor': 0, 'has_more': false}),
+          jsonEncode({
+            'rows': [],
+            'next_cursor': pullCursor,
+            'has_more': false,
+          }),
           200,
         );
     }
@@ -289,5 +303,112 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(h.backend.pushes, isEmpty);
+    // Not just "found nothing to send": the triggers themselves are gone.
+    expect(h.ticker.hasListener, isFalse);
+    expect(h.network.hasListener, isFalse);
   }, variant: phoneOnly);
+
+  testWidgets(
+    'the network monitor reporting "online" when first subscribed is not a '
+    'regained network, and online-to-online (Wi-Fi to mobile) is not either',
+    (tester) async {
+      final h = await pumpWithBackend(tester);
+      h.network.online = true;
+      await signIn(tester, h.container); // one sync for signing in
+
+      h.network.goOnline(); // already online: a handover, not a regain
+      await tester.pumpAndSettle();
+
+      expect(h.backend.pulls, 1);
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'coming back to the app moments after a sync does not sync again -- on '
+    'Windows "resumed" fires on every alt-tab',
+    (tester) async {
+      final h = await pumpWithBackend(tester);
+      h.network.online = true;
+      await signIn(tester, h.container);
+      expect(h.backend.pulls, 1);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(h.backend.pulls, 1);
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
+    'restoring a backup while signed in and online never syncs against the '
+    'database restore just closed, and syncs the restored one once it opens',
+    (tester) async {
+      final h = await pumpWithBackend(tester);
+      await signIn(tester, h.container);
+      h.network.online = true;
+
+      // What restoreFromPickedFile does: release the file, then reload.
+      final firm = h.container.read(openFirmProvider).value!;
+      await firm.db.close();
+      h.container.invalidate(firmGateProvider);
+      h.container.invalidate(openFirmProvider);
+      await tester.pumpAndSettle();
+
+      expect(h.container.read(syncRunnerProvider).error, isNull);
+      expect(h.backend.pulls, 1);
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'a sync that dies on an Error (not an Exception) still reports it, frees '
+    'the Sync now button, and the next save syncs normally',
+    (tester) async {
+      final h = await pumpWithBackend(tester);
+      await signIn(tester, h.container);
+      h.network.online = true;
+      h.backend.pullCursor = null;
+
+      await saveItem(tester, h.container, 'Rice');
+
+      final failed = h.container.read(syncRunnerProvider);
+      expect(failed.running, isFalse);
+      expect(failed.error, isNotNull);
+
+      h.backend.pullCursor = 0;
+      await saveItem(tester, h.container, 'Sugar');
+
+      expect(h.backend.pushes.last, contains('Sugar'));
+      expect(h.container.read(syncRunnerProvider).error, isNull);
+    },
+    variant: phoneOnly,
+  );
+
+  testWidgets(
+    'a request that never answers times out instead of holding up every '
+    'later sync forever',
+    (tester) async {
+      final h = await pumpWithBackend(tester);
+      await signIn(tester, h.container);
+      h.network.online = true;
+      h.backend.hangPushes = true;
+
+      await saveItem(tester, h.container, 'Rice');
+      await tester.pump(backendRequestTimeout + const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+
+      final timedOut = h.container.read(syncRunnerProvider);
+      expect(timedOut.running, isFalse);
+      expect(timedOut.error, contains('did not answer'));
+
+      h.backend.hangPushes = false;
+      await saveItem(tester, h.container, 'Sugar');
+
+      expect(h.backend.pushes.last, containsAll(['Rice', 'Sugar']));
+    },
+    variant: phoneOnly,
+  );
 }
