@@ -14,12 +14,12 @@ class PushSummary {
 /// the caller (the Settings sync UI) is responsible for refreshing it
 /// before calling this; there's no in-flight 401-retry here yet.
 ///
-/// Not handled yet, called out rather than silently skipped: a `rewrite`
-/// in a push response (a customer auto-merge) isn't applied to local rows
-/// — the device keeps using its own id, which the server will keep
-/// accepting as a no-op on every future push of it, so nothing breaks, but
-/// the merge itself never becomes visible locally. Real gap for a
-/// follow-up, not an oversight.
+/// A `rewrite` in a push response (the server auto-merged a customer this
+/// device created into one it already had) is applied after the pull, once
+/// the survivor exists locally: the device's copy is marked merged and its
+/// bills move across. Rewrites live only for this instance's push+pull; if
+/// the app dies in between, the pull-time phone-clash settling in
+/// [_settlePhoneClash] still folds an unflagged duplicate the same way.
 class SyncService {
   SyncService({
     required this.db,
@@ -32,6 +32,14 @@ class SyncService {
   final DeviceContext ctx;
   final BackendClient client;
   final String accessToken;
+
+  /// Customer id -> the id the server merged it into, from this instance's
+  /// push, applied by [pullAll].
+  final _rewrites = <String, String>{};
+
+  /// Whether this sync merged any customer, so the bill move also checks
+  /// deleted bills (a deleted bill of a merged customer still has to push).
+  var _mergedThisSync = false;
 
   Future<PushSummary> pushPending() async {
     final outboxRows = await db.select(db.syncOutbox).get();
@@ -53,6 +61,7 @@ class SyncService {
       deviceId: ctx.deviceId,
       rows: pushRows,
     );
+    _rewrites.addAll(result.rewrites);
 
     for (final entry in pending) {
       if (result.accepted.containsKey(entry.rowId)) {
@@ -114,8 +123,43 @@ class SyncService {
           );
       if (!page.hasMore) break;
     }
+    await _applyRewrites();
     await _moveBillsOffMergedCustomers();
     return pulled;
+  }
+
+  /// Marks each customer the server merged away as merged into its
+  /// survivor -- the server's own answer, not a guess, so it also covers a
+  /// survivor that arrived flagged needs_review (which [_settlePhoneClash]
+  /// leaves alone, since a flagged row can't clash on the phone index).
+  /// Skipped while the survivor isn't local yet.
+  Future<void> _applyRewrites() async {
+    for (final MapEntry(key: oldId, value: newId) in _rewrites.entries) {
+      final survivor = await (db.select(
+        db.customers,
+      )..where((c) => c.id.equals(newId))).getSingleOrNull();
+      if (survivor == null) continue;
+      final stamp = ctx.stamp();
+      final changed =
+          await (db.update(db.customers)..where(
+                (c) =>
+                    c.id.equals(oldId) &
+                    c.mergedIntoId.isNull() &
+                    c.deletedAt.isNull(),
+              ))
+              .write(
+                CustomersCompanion(
+                  mergedIntoId: Value(newId),
+                  updatedAt: Value(stamp),
+                  updatedByDeviceId: Value(ctx.deviceId),
+                ),
+              );
+      if (changed > 0) {
+        await enqueueOutbox(db, 'customers', oldId, stamp);
+        _mergedThisSync = true;
+      }
+    }
+    _rewrites.clear();
   }
 
   /// Repoints every bill whose customer has been merged away onto the
@@ -143,9 +187,21 @@ class SyncService {
     }
 
     await db.transaction(() async {
-      final bills = await (db.select(
-        db.transactions,
-      )..where((t) => t.customerId.isIn(mergedInto.keys))).get();
+      // Live bills only, normally: `deleted_at IS NULL` lets this use the
+      // partial ledger index instead of scanning every bill on every sync.
+      // A deleted bill of a just-merged customer still has to push, so a
+      // sync that merged something checks those too.
+      final includeDeleted = _mergedThisSync;
+      final bills =
+          await (db.select(db.transactions)..where(
+                (t) =>
+                    t.firmId.equals(ctx.firmId) &
+                    t.customerId.isIn(mergedInto.keys) &
+                    (includeDeleted
+                        ? const Constant(true)
+                        : t.deletedAt.isNull()),
+              ))
+              .get();
       for (final bill in bills) {
         final stamp = ctx.stamp();
         await (db.update(
@@ -159,8 +215,22 @@ class SyncService {
           ),
         );
         await enqueueOutbox(db, 'transactions', bill.id, stamp);
+        // Whatever the server said about the old customer (usually
+        // "invalid": it never had that customer) no longer applies.
+        await (db.update(db.syncOutbox)..where(
+              (o) =>
+                  o.targetTable.equals('transactions') &
+                  o.rowId.equals(bill.id),
+            ))
+            .write(
+              const SyncOutboxCompanion(
+                attempts: Value(0),
+                failedReason: Value(null),
+              ),
+            );
       }
     });
+    _mergedThisSync = false;
   }
 
   /// A pulled customer [id] whose phone a different live, unflagged local
@@ -206,6 +276,7 @@ class SyncService {
       ),
     );
     await enqueueOutbox(db, 'customers', clash.id, stamp);
+    if (sameName) _mergedThisSync = true;
   }
 
   Future<Map<String, dynamic>?> _currentRowData(String table, String id) async {

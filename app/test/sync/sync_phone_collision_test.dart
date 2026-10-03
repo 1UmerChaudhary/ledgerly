@@ -210,4 +210,62 @@ void main() {
     expect(await _queued(db, 'customers', mine.id), isTrue);
     expect((await _customer(db, theirs)).needsReview, isFalse);
   });
+
+  test('the server saying it merged mine into its copy is followed, even '
+      'when its copy is flagged needs_review (where guessing from the pull '
+      'alone would leave mine live and its bills rejected forever)', () async {
+    final (db, ctx) = await _seededDb();
+    addTearDown(db.close);
+    final mine = await _localAli(db, ctx);
+    final bill = await _billFor(db, ctx, mine.id);
+    final theirs = newId();
+    final service = SyncService(
+      db: db,
+      ctx: ctx,
+      accessToken: 'token',
+      client: BackendClient(
+        baseUrl: 'https://api.example.com',
+        httpClient: MockClient((request) async {
+          if (request.url.path == '/sync/push') {
+            return http.Response(
+              jsonEncode({
+                'accepted': [
+                  {'id': mine.id, 'updated_at': 5000},
+                ],
+                'rejected': [
+                  {'id': bill.id, 'reason': 'invalid'},
+                ],
+                'rewrites': [
+                  {'old_id': mine.id, 'new_id': theirs},
+                ],
+                'server_time': 6000,
+              }),
+              200,
+            );
+          }
+          return http.Response(
+            jsonEncode({
+              'rows': [_customerRow(theirs, name: 'Ali', needsReview: true)],
+              'next_cursor': 9,
+              'has_more': false,
+            }),
+            200,
+          );
+        }),
+      ),
+    );
+
+    await service.pushPending();
+    await service.pullAll();
+
+    expect((await _customer(db, mine.id)).mergedIntoId, theirs);
+    expect((await _bill(db, bill.id)).customerId, theirs);
+    // Queued again, with the old rejection cleared -- it isn't "invalid"
+    // any more, and Settings shouldn't keep saying so.
+    final outbox = await (db.select(
+      db.syncOutbox,
+    )..where((o) => o.rowId.equals(bill.id))).getSingle();
+    expect(outbox.attempts, 0);
+    expect(outbox.failedReason, isNull);
+  });
 }
