@@ -11,6 +11,20 @@ void main() {
       );
     });
 
+    test('strips slashes from the path only, never from the scheme -- a '
+        'half-typed "https://" stays recognisably half-typed', () {
+      expect(normalizeBackendUrl('https://'), 'https://');
+      expect(normalizeBackendUrl('http://'), 'http://');
+      expect(
+        normalizeBackendUrl('https://ledgerly.example.com/api/'),
+        'https://ledgerly.example.com/api',
+      );
+      expect(
+        normalizeBackendUrl('https://ledgerly.example.com:8443/'),
+        'https://ledgerly.example.com:8443',
+      );
+    });
+
     test('adds https:// when the scheme was left off', () {
       expect(
         normalizeBackendUrl('ledgerly.example.com'),
@@ -64,6 +78,17 @@ void main() {
         backendUrlProblem('http://localhost:8000', isAndroid: false),
         isNull,
       );
+    });
+
+    test('a half-typed or mistyped address is refused after normalizing, '
+        'which is what Settings actually checks', () {
+      for (final typed in ['https://', 'http://', 'http:/host', 'https:host']) {
+        expect(
+          backendUrlProblem(normalizeBackendUrl(typed), isAndroid: false),
+          contains('web address'),
+          reason: typed,
+        );
+      }
     });
 
     test('something that is not a web address says so', () {

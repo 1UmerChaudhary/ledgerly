@@ -17,11 +17,12 @@ final httpClientProvider = Provider<http.Client>((ref) => http.Client());
 /// The server a fresh install points at. A release build gets the real one
 /// baked in (`flutter build apk --dart-define=LEDGERLY_BACKEND_URL=https://...`)
 /// and, without it, starts empty so Settings asks for an address -- never
-/// localhost, which on a phone is the phone itself. Debug builds and tests
-/// keep the local development server.
+/// localhost, which on a phone is the phone itself. Only debug builds (and
+/// tests) keep the local development server -- a profile build handed to a
+/// tester is a phone build too.
 const defaultBackendUrl = String.fromEnvironment(
   'LEDGERLY_BACKEND_URL',
-  defaultValue: kReleaseMode ? '' : 'http://localhost:8000',
+  defaultValue: kDebugMode ? 'http://localhost:8000' : '',
 );
 
 final backendClientProvider = Provider<BackendClient>((ref) {

@@ -3,9 +3,17 @@
 /// "https://x/" requested "https://x//auth/..." and 404'd), and https://
 /// added when no scheme was typed at all.
 String normalizeBackendUrl(String input) {
-  var url = input.trim().replaceFirst(RegExp(r'/+$'), '');
-  if (url.isNotEmpty && !url.contains('://')) url = 'https://$url';
-  return url;
+  var url = input.trim();
+  if (url.isEmpty) return url;
+  if (!url.contains('://')) url = 'https://$url';
+  final uri = Uri.tryParse(url);
+  // Unparseable or host-less ("https://"): left as typed, slashes and all,
+  // so backendUrlProblem can say so -- stripping them blindly used to turn
+  // "https://" into "https://https:", which then passed every check.
+  if (uri == null || uri.host.isEmpty) return url;
+  return uri
+      .replace(path: uri.path.replaceFirst(RegExp(r'/+$'), ''))
+      .toString();
 }
 
 /// Why [url] can't work as the sync server on this device, in words for the
@@ -19,7 +27,10 @@ String? backendUrlProblem(String url, {required bool isAndroid}) {
   final uri = Uri.tryParse(url);
   if (uri == null ||
       !(uri.scheme == 'https' || uri.scheme == 'http') ||
-      uri.host.isEmpty) {
+      uri.host.isEmpty ||
+      // "http:/host" typed without its second slash parses as a server
+      // literally named "http".
+      const {'http', 'https'}.contains(uri.host)) {
     return "That isn't a web address. It should look like "
         'https://ledgerly-backend.onrender.com';
   }
