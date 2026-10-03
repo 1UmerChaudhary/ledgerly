@@ -42,8 +42,12 @@ void main() {
         'access_token': 'a',
         'refresh_token': 'r',
         'token_type': 'bearer',
-        'user': {'id': 'u1', 'name': 'Owner', 'email': 'owner@example.com'},
-        'firm': {'id': 'f1', 'name': 'Mill'},
+        'user': {
+          'id': testServerUserId,
+          'name': 'Owner',
+          'email': 'owner@example.com',
+        },
+        'firm': {'id': testFirmId, 'name': 'Mill'},
       }),
       201,
     );
@@ -98,8 +102,12 @@ void main() {
             'access_token': 'a',
             'refresh_token': 'r',
             'token_type': 'bearer',
-            'user': {'id': 'u1', 'name': 'Owner', 'email': 'owner@example.com'},
-            'firm': {'id': 'f1', 'name': 'Mill'},
+            'user': {
+              'id': testServerUserId,
+              'name': 'Owner',
+              'email': 'owner@example.com',
+            },
+            'firm': {'id': testFirmId, 'name': 'Mill'},
           }),
           201,
         );
@@ -154,11 +162,11 @@ void main() {
               'refresh_token': 'r',
               'token_type': 'bearer',
               'user': {
-                'id': 'u1',
+                'id': testServerUserId,
                 'name': 'Owner',
                 'email': 'owner@example.com',
               },
-              'firm': {'id': 'f1', 'name': 'Mill'},
+              'firm': {'id': testFirmId, 'name': 'Mill'},
             }),
             201,
           );
@@ -234,11 +242,11 @@ void main() {
               'refresh_token': 'r',
               'token_type': 'bearer',
               'user': {
-                'id': 'u1',
+                'id': testServerUserId,
                 'name': 'Owner',
                 'email': 'owner@example.com',
               },
-              'firm': {'id': 'f1', 'name': 'Mill'},
+              'firm': {'id': testFirmId, 'name': 'Mill'},
             }),
             201,
           );
@@ -334,11 +342,11 @@ void main() {
               'refresh_token': 'r1',
               'token_type': 'bearer',
               'user': {
-                'id': 'u1',
+                'id': testServerUserId,
                 'name': 'Owner',
                 'email': 'owner@example.com',
               },
-              'firm': {'id': 'f1', 'name': 'Mill'},
+              'firm': {'id': testFirmId, 'name': 'Mill'},
             }),
             201,
           );
@@ -426,8 +434,12 @@ void main() {
             'access_token': 'a',
             'refresh_token': 'r',
             'token_type': 'bearer',
-            'user': {'id': 'u1', 'name': 'Owner', 'email': 'owner@example.com'},
-            'firm': {'id': 'f1', 'name': 'Mill'},
+            'user': {
+              'id': testServerUserId,
+              'name': 'Owner',
+              'email': 'owner@example.com',
+            },
+            'firm': {'id': testFirmId, 'name': 'Mill'},
           }),
           201,
         );
@@ -496,8 +508,12 @@ void main() {
             'access_token': 'a',
             'refresh_token': 'r',
             'token_type': 'bearer',
-            'user': {'id': 'u1', 'name': 'Owner', 'email': 'owner@gmail.com'},
-            'firm': {'id': 'f1', 'name': 'Mill'},
+            'user': {
+              'id': testServerUserId,
+              'name': 'Owner',
+              'email': 'owner@gmail.com',
+            },
+            'firm': {'id': testFirmId, 'name': 'Mill'},
           }),
           201,
         );
@@ -581,8 +597,12 @@ void main() {
         'access_token': 'access-1',
         'refresh_token': 'r',
         'token_type': 'bearer',
-        'user': {'id': 'u1', 'name': 'Owner', 'email': 'owner@example.com'},
-        'firm': {'id': 'f1', 'name': 'Mill'},
+        'user': {
+          'id': testServerUserId,
+          'name': 'Owner',
+          'email': 'owner@example.com',
+        },
+        'firm': {'id': testFirmId, 'name': 'Mill'},
       }),
       200,
     );
@@ -729,8 +749,12 @@ void main() {
             'access_token': 'a',
             'refresh_token': 'r',
             'token_type': 'bearer',
-            'user': {'id': 'u1', 'name': 'Owner', 'email': 'owner@example.com'},
-            'firm': {'id': 'f1', 'name': 'Mill'},
+            'user': {
+              'id': testServerUserId,
+              'name': 'Owner',
+              'email': 'owner@example.com',
+            },
+            'firm': {'id': testFirmId, 'name': 'Mill'},
           }),
           201,
         );
@@ -757,6 +781,48 @@ void main() {
 
       expect(sentTo.toString(), 'https://ledgerly.example.com/auth/register');
       expect(find.byKey(const Key('settings.cloudConnected')), findsOneWidget);
+    },
+    variant: windowsOnly,
+  );
+
+  testWidgets(
+    "logging in to an account whose business isn't the one on this device "
+    'is refused with an explanation, instead of failing every sync after',
+    (tester) async {
+      final container = await pumpLedgerly(tester, seed: seed);
+      final fakeHttp = container.read(httpClientProvider) as FakeHttpClient;
+      fakeHttp.handler = (request) async => http.Response(
+        jsonEncode({
+          'access_token': 'a',
+          'refresh_token': 'r',
+          'token_type': 'bearer',
+          'user': {
+            'id': testServerUserId,
+            'name': 'Owner',
+            'email': 'owner@example.com',
+          },
+          'firm': {
+            'id': '77777777-7777-4777-8777-777777777777',
+            'name': 'Another Mill',
+          },
+        }),
+        200,
+      );
+      await pressCtrl(tester, LogicalKeyboardKey.comma);
+      await _type(
+        tester,
+        const Key('settings.cloudEmail'),
+        'owner@example.com',
+      );
+      await _type(tester, const Key('settings.cloudPassword'), 'pw-123456');
+      await tester.ensureVisible(find.byKey(const Key('settings.cloudLogin')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('settings.cloudLogin')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('settings.cloudError')), findsOneWidget);
+      expect(find.textContaining('different business'), findsOneWidget);
+      expect(container.read(cloudSessionProvider), isNull);
     },
     variant: windowsOnly,
   );
