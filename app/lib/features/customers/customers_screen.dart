@@ -141,19 +141,10 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                                   : Row(
                                       children: [
                                         Expanded(
-                                          child: Text(
-                                            cu.name,
-                                            // A long name has nowhere near
-                                            // enough room next to the two
-                                            // fixed phone/balance columns --
-                                            // without this it wraps
-                                            // character-by-character down
-                                            // the row instead of truncating.
-                                            overflow: TextOverflow.ellipsis,
-                                            maxLines: 1,
-                                            style: const TextStyle(
-                                              fontSize: 13.5,
-                                            ),
+                                          child: _nameWithReviewBadge(
+                                            context,
+                                            cu,
+                                            fontSize: 13.5,
                                           ),
                                         ),
                                         SizedBox(
@@ -200,14 +191,11 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                cu.name,
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
+              _nameWithReviewBadge(
+                context,
+                cu,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
               ),
               if (cu.phone case final phone? when phone.isNotEmpty)
                 Text(
@@ -219,6 +207,55 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
         ),
         const SizedBox(width: 10),
         _balanceText(context, balance),
+      ],
+    );
+  }
+
+  /// The name, ellipsized, with a "Check" badge when sync flagged this
+  /// customer needs_review: it shares a phone with another customer (two
+  /// devices added them separately), and only a person can tell whether
+  /// they're the same customer. Without the badge the flag was invisible.
+  Widget _nameWithReviewBadge(
+    BuildContext context,
+    Customer cu, {
+    required double fontSize,
+    FontWeight? fontWeight,
+  }) {
+    final c = context.colors;
+    final name = Text(
+      cu.name,
+      // A long name has little room in the row -- without this it wraps
+      // character-by-character instead of truncating.
+      overflow: TextOverflow.ellipsis,
+      maxLines: 1,
+      style: TextStyle(fontSize: fontSize, fontWeight: fontWeight),
+    );
+    if (!cu.needsReview) return name;
+    return Row(
+      children: [
+        Flexible(child: name),
+        const SizedBox(width: 6),
+        Tooltip(
+          message:
+              'Shares a phone number with another customer. Check whether '
+              'they are the same person.',
+          child: Container(
+            key: const Key('customers.needsReview'),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: c.accentSoft,
+              borderRadius: BorderRadius.circular(3),
+            ),
+            child: Text(
+              'Check',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: c.accent,
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }

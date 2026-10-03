@@ -83,6 +83,49 @@ Future<void> type(WidgetTester tester, Key key, String text) async {
 }
 
 void main() {
+  group('customers the server flagged for review', () {
+    Future<void> seedFlagged(AppDatabase db, DeviceContext ctx) async {
+      await seedForSearch(db, ctx);
+      // What a sync leaves when two devices added different names with the
+      // same phone: both kept, flagged for a person to check.
+      await db.customStatement(
+        "UPDATE customers SET needs_review = 1 WHERE name = 'Rashid Traders'",
+      );
+    }
+
+    for (final (label, size, variant) in [
+      ('desktop', const Size(1280, 800), windowsOnly),
+      ('phone', const Size(360, 780), phoneOnly),
+    ]) {
+      testWidgets('are marked in the Customers list ($label)', (tester) async {
+        final container = await pumpLedgerly(
+          tester,
+          seed: seedFlagged,
+          viewSize: size,
+        );
+        container.read(routerProvider).go('/customers');
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(
+          find.byKey(const Key('customers.needsReview')),
+          findsOneWidget,
+          reason: 'only Rashid Traders is flagged',
+        );
+        expect(
+          find.descendant(
+            of: find.ancestor(
+              of: find.text('Rashid Traders'),
+              matching: find.byKey(const Key('customers.row')),
+            ),
+            matching: find.byKey(const Key('customers.needsReview')),
+          ),
+          findsOneWidget,
+        );
+      }, variant: variant);
+    }
+  });
+
   group('customers search', () {
     for (final query in [
       '0300 987',
