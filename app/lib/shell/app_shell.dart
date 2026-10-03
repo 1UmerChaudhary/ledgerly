@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../bootstrap/providers.dart';
 import '../features/settings/settings_providers.dart';
 import '../l10n/app_localizations.dart';
+import '../sync/auto_sync.dart';
 import '../theme/ledgerly_theme.dart';
 import 'breakpoints.dart';
 
@@ -113,6 +114,9 @@ class AppShell extends ConsumerWidget {
     final firm = ref.watch(openFirmProvider).value;
     final settings = ref.watch(firmSettingsProvider).value;
     final backup = ref.watch(backupRunnerProvider);
+    // Watched only to keep the automatic sync triggers alive while the app
+    // shell is up; it has no state worth rendering.
+    ref.watch(autoSyncProvider);
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyN, control: true): () =>

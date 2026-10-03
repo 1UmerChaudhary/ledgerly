@@ -219,7 +219,8 @@ void main() {
   );
 
   testWidgets(
-    'two concurrent syncs against an expired token only refresh once',
+    'two overlapping sync requests share one run against an expired token: '
+    'one refresh, then one follow-up run -- never two syncs side by side',
     (tester) async {
       final container = await pumpLedgerly(tester, seed: seedWithPendingSync);
       final fakeHttp = container.read(httpClientProvider) as FakeHttpClient;
@@ -244,11 +245,10 @@ void main() {
         }
         if (request.url.path == '/sync/push') {
           pushCalls++;
-          // Both concurrent syncNow() calls send their first push before
-          // either has a chance to retry, so the first two /sync/push
-          // calls are the ones that see the expired token; anything past
-          // that is a post-refresh retry and should succeed.
-          if (pushCalls <= 2) {
+          // Only the very first push sees the expired token. Before
+          // single-flight, both overlapping calls sent a push on it; now the
+          // second joins the first instead of starting its own.
+          if (pushCalls == 1) {
             return http.Response(
               jsonEncode({'detail': 'Invalid or expired token'}),
               401,
@@ -294,13 +294,16 @@ void main() {
       await tester.tap(find.byKey(const Key('settings.cloudRegister')));
       await tester.pumpAndSettle();
 
-      // Fire both without awaiting the first, so they race against the
-      // same expired token.
+      // Fire both without awaiting the first, so they overlap.
       final first = container.read(syncRunnerProvider.notifier).syncNow();
       final second = container.read(syncRunnerProvider.notifier).syncNow();
       await Future.wait([first, second]);
 
       expect(refreshCalls, 1);
+      // 401, the retry after refreshing, then the one follow-up run the
+      // second request asked for (the fake acks nothing, so the item is
+      // still queued for it).
+      expect(pushCalls, 3);
       expect(container.read(cloudSessionProvider), isNotNull);
       expect(container.read(syncRunnerProvider).error, isNull);
     },
@@ -308,24 +311,20 @@ void main() {
   );
 
   testWidgets(
-    'a sync that entered before another caller rotated the token refreshes '
-    'with the CURRENT one, not the one it captured on the way in',
+    'a sync requested while one is stuck on an expired token runs again '
+    'afterwards, on the rotated token rather than the one it saw on the way in',
     (tester) async {
-      // Not the concurrency case above -- that is two refreshes overlapping,
-      // and the single-flight guard already covers it. This is a SEQUENCING
-      // case: caller B enters and captures the session, caller A completes a
-      // whole refresh (rotating the token and clearing the guard), and only
-      // THEN does B's own request come back 401. B is now alone, so it starts
-      // its own refresh -- and if it uses the token it captured on the way in,
-      // that token is one the server rotated away a moment ago, so the refresh
-      // itself 401s and signs the user out. Which is the exact wrongful logout
-      // this whole feature exists to prevent.
+      // Before single-flight, two overlapping syncs could each hit a 401 and
+      // each start a refresh, so the second refresh had to read the token at
+      // call time or present one the first had already rotated away (and get
+      // signed out for it). Overlapping syncs can't happen now; what's left
+      // to prove is the follow-up run: it must pick up the session as it is
+      // when it starts, not as it was when it was requested.
       final container = await pumpLedgerly(tester, seed: seedWithPendingSync);
       final fakeHttp = container.read(httpClientProvider) as FakeHttpClient;
       final heldPush = Completer<void>();
       final refreshTokensSeen = <String>[];
-      var currentRefreshToken = 'r1';
-      var pushCalls = 0;
+      final pushTokens = <String>[];
 
       fakeHttp.handler = (request) async {
         if (request.url.path == '/auth/register') {
@@ -345,39 +344,21 @@ void main() {
           );
         }
         if (request.url.path == '/auth/refresh') {
-          final sent =
-              jsonDecode((request as http.Request).body)['refresh_token']
-                  as String;
-          refreshTokensSeen.add(sent);
-          // A real /auth/refresh rotates: the token it was given stops
-          // working the moment a new one is issued, so presenting a
-          // superseded one is a 401, not a second success.
-          if (sent != currentRefreshToken) {
-            return http.Response(
-              jsonEncode({'detail': 'Invalid or expired refresh token'}),
-              401,
-            );
-          }
-          currentRefreshToken = 'r2';
+          refreshTokensSeen.add(
+            jsonDecode((request as http.Request).body)['refresh_token']
+                as String,
+          );
           return http.Response(
             jsonEncode({'access_token': 'a2', 'refresh_token': 'r2'}),
             200,
           );
         }
         if (request.url.path == '/sync/push') {
-          pushCalls++;
-          // Caller B's first push: held open until caller A has been all the
-          // way through a refresh, so B's 401 lands in a world where the
-          // guard is clear and its captured token is already stale.
-          if (pushCalls == 1) {
+          final token = request.headers['Authorization']!;
+          pushTokens.add(token);
+          if (token == 'Bearer a1') {
+            // Held open so the second request lands mid-run.
             await heldPush.future;
-            return http.Response(
-              jsonEncode({'detail': 'Invalid or expired token'}),
-              401,
-            );
-          }
-          // Caller A's push, on the token that has just expired.
-          if (pushCalls == 2) {
             return http.Response(
               jsonEncode({'detail': 'Invalid or expired token'}),
               401,
@@ -418,21 +399,15 @@ void main() {
       await tester.pumpAndSettle();
 
       final runner = container.read(syncRunnerProvider.notifier);
-      final b = runner.syncNow(); // captures r1, then parks on heldPush
+      final first = runner.syncNow(); // parks on heldPush with a1
       await tester.pump();
-      final a = runner.syncNow(); // 401 -> refreshes r1 -> r2 -> retries
-      await a;
+      final second = runner.syncNow(); // joins, asks for one more run
 
-      heldPush.complete(); // now B's 401 finally arrives
-      await b;
+      heldPush.complete(); // a1's 401 arrives: refresh r1 -> r2, retry
+      await Future.wait([first, second]);
 
-      expect(
-        refreshTokensSeen,
-        ['r1', 'r2'],
-        reason:
-            'the second refresh must present the token the first one '
-            'issued, not the one it superseded',
-      );
+      expect(refreshTokensSeen, ['r1']);
+      expect(pushTokens, ['Bearer a1', 'Bearer a2', 'Bearer a2']);
       expect(container.read(cloudSessionProvider), isNotNull);
       expect(container.read(syncRunnerProvider).error, isNull);
     },

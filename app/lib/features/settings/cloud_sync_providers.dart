@@ -211,8 +211,34 @@ class SyncRunner extends Notifier<SyncStatus> {
   SyncStatus build() => const SyncStatus();
 
   Future<void>? _inFlightRefresh;
+  Future<void>? _inFlightSync;
+  var _rerunRequested = false;
 
-  Future<void> syncNow() async {
+  /// Single-flight (docs/design-spec.md Section 4): with auto-sync firing on
+  /// every save, a burst of saves would otherwise start a burst of parallel
+  /// syncs, each pushing the same outbox rows. A call that arrives mid-run
+  /// joins it and asks for ONE more run afterwards -- without that rerun, a
+  /// save made after this run read the outbox would wait for the next
+  /// trigger. The returned future completes once that rerun has too, so an
+  /// awaiting caller knows its own change has been pushed.
+  Future<void> syncNow() {
+    if (_inFlightSync case final running?) {
+      _rerunRequested = true;
+      return running;
+    }
+    return _inFlightSync = _runUntilNoRerunRequested().whenComplete(
+      () => _inFlightSync = null,
+    );
+  }
+
+  Future<void> _runUntilNoRerunRequested() async {
+    do {
+      _rerunRequested = false;
+      await _syncOnce();
+    } while (_rerunRequested);
+  }
+
+  Future<void> _syncOnce() async {
     final session = ref.read(cloudSessionProvider);
     final firm = ref.read(openFirmProvider).value;
     if (session == null || firm == null) return;

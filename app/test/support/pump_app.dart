@@ -22,6 +22,7 @@ import 'package:ledgerly/platform/native_pickers.dart';
 import 'package:ledgerly/printing/print_actions.dart';
 import 'package:ledgerly/printing/printing_service.dart';
 import 'package:ledgerly/printing/thermal_printer_service.dart';
+import 'package:ledgerly/sync/auto_sync.dart';
 import 'package:ledgerly_data/ledgerly_data.dart';
 
 /// Boots the real app against an in-memory database. Use together with
@@ -116,6 +117,8 @@ Future<ProviderContainer> pumpLedgerly(
       restoreServiceProvider.overrideWithValue(fakeRestoreService),
       httpClientProvider.overrideWithValue(fakeHttp),
       googleAuthenticatorProvider.overrideWithValue(fakeGoogleAuth),
+      networkMonitorProvider.overrideWithValue(FakeNetworkMonitor()),
+      syncTickerProvider.overrideWithValue(FakeSyncTicker()),
       databaseOpenerProvider.overrideWithValue(openDb),
       // Same reasoning as the fakes above: EncryptionService is all real file
       // I/O, which wedges the widget tester here. Its real behaviour --
@@ -391,6 +394,44 @@ class FakeHttpClient extends http.BaseClient {
       headers: response.headers,
     );
   }
+}
+
+/// Stands in for [NetworkMonitor]: connectivity_plus drives a platform
+/// channel flutter_tester has no implementation for. Offline by default, so
+/// auto-sync stays quiet in every test that doesn't opt in -- a test about
+/// the Sync now button shouldn't also have to script the requests an
+/// automatic sync would make behind its back.
+class FakeNetworkMonitor implements NetworkMonitor {
+  bool online = false;
+  final _changes = StreamController<bool>.broadcast();
+
+  void goOnline() {
+    online = true;
+    _changes.add(true);
+  }
+
+  void goOffline() {
+    online = false;
+    _changes.add(false);
+  }
+
+  @override
+  Future<bool> isOnline() async => online;
+
+  @override
+  Stream<bool> get onlineChanges => _changes.stream;
+}
+
+/// Stands in for [SyncTicker]: a real periodic timer still running when a
+/// widget test ends fails it ("A Timer is still pending"), and nobody wants
+/// a test that waits five minutes. [tick] is one five-minute beat.
+class FakeSyncTicker implements SyncTicker {
+  final _ticks = StreamController<void>.broadcast();
+
+  void tick() => _ticks.add(null);
+
+  @override
+  Stream<void> get ticks => _ticks.stream;
 }
 
 /// Stands in for [GoogleAuthenticator] in widget tests: no real platform

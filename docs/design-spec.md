@@ -272,7 +272,11 @@ short_code (integer, so 10 > 9). Restore from a history snapshot resolves `custo
 
 Unit = **bill** (header + all lines, one JSON document, one version). Other tables row-by-row.
 Dependency order: firms, devices, users/firm_members, items, customers, bills, history, print_log.
-Triggers: network regained, every 5 min online, 5 s after save (debounced), manual. Single-flight.
+Triggers: every save while online (immediately, no debounce), network regained, every 5 min while
+online, app returning to the foreground (Android pauses timers in the background), right after
+sign-in, manual. Single-flight: a trigger that fires mid-run joins it and queues ONE follow-up run,
+so a burst of saves is one push plus one catch-up, never parallel pushes. Only the manual trigger
+skips the online check. Runs while the app is open; no sync while it's fully closed.
 
 ```
 0 first sync: GET /sync/time → clock_offset; if hlc_last > server_time + 5 min, seed hlc_last =
