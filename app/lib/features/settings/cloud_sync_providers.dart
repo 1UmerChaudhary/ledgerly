@@ -29,8 +29,10 @@ const defaultBackendUrl = String.fromEnvironment(
 final backendClientProvider = Provider<BackendClient>((ref) {
   // Normalized here too, not only when Settings saves it: an address saved
   // before that (say with a trailing slash) must still work.
-  final url = normalizeBackendUrl(
-    ref.watch(globalPrefsProvider).backendUrl ?? defaultBackendUrl,
+  final url = effectiveBackendUrl(
+    ref.watch(globalPrefsProvider).backendUrl,
+    builtIn: defaultBackendUrl,
+    isAndroid: defaultTargetPlatform == TargetPlatform.android,
   );
   return BackendClient(baseUrl: url, httpClient: ref.watch(httpClientProvider));
 });

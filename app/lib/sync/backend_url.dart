@@ -46,3 +46,22 @@ String? backendUrlProblem(String url, {required bool isAndroid}) {
   }
   return null;
 }
+
+/// The server this device actually talks to: the address saved in Settings
+/// when it can work here, otherwise [builtIn] -- the one baked into the
+/// release build, so nobody has to know or type an address at all. A saved
+/// address that can't work on this device (an older version saved
+/// "http://localhost:8000" on phones) quietly gives way to [builtIn]; a
+/// working one is kept, so a business can still point at its own server.
+String effectiveBackendUrl(
+  String? stored, {
+  required String builtIn,
+  required bool isAndroid,
+}) {
+  final saved = normalizeBackendUrl(stored ?? '');
+  if (builtIn.isEmpty) return saved;
+  if (saved.isEmpty || backendUrlProblem(saved, isAndroid: isAndroid) != null) {
+    return normalizeBackendUrl(builtIn);
+  }
+  return saved;
+}
