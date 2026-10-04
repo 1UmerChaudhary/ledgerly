@@ -70,8 +70,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _contact.text = firm.contactNumber;
     _address.text = firm.address ?? '';
     _folder.text = folder ?? '';
-    _backendUrl.text =
-        ref.read(globalPrefsProvider).backendUrl ?? defaultBackendUrl;
+    // What the app will actually use, so the field never shows a saved
+    // address the app has stopped using (localhost on a phone).
+    _backendUrl.text = effectiveBackendUrl(
+      ref.read(globalPrefsProvider).backendUrl,
+      builtIn: defaultBackendUrl,
+      isAndroid: defaultTargetPlatform == TargetPlatform.android,
+    );
   }
 
   Future<void> _saveFirm() async {

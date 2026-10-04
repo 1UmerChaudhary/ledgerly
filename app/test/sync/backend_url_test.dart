@@ -102,4 +102,60 @@ void main() {
       );
     });
   });
+
+  group('effectiveBackendUrl', () {
+    const builtIn = 'https://ledgerly-backend-4fgopyhzqq-uc.a.run.app';
+
+    test('nothing saved: the address built into the app', () {
+      for (final stored in [null, '', '   ']) {
+        expect(
+          effectiveBackendUrl(stored, builtIn: builtIn, isAndroid: true),
+          builtIn,
+        );
+      }
+    });
+
+    test('a saved address that cannot work here (localhost on a phone, '
+        'saved by an older version) gives way to the built-in one', () {
+      expect(
+        effectiveBackendUrl(
+          'http://localhost:8000',
+          builtIn: builtIn,
+          isAndroid: true,
+        ),
+        builtIn,
+      );
+    });
+
+    test('a working saved address is kept -- a business can run its own '
+        'server -- and so is localhost on a desktop, for development', () {
+      expect(
+        effectiveBackendUrl(
+          'https://my-own-server.example.com/',
+          builtIn: builtIn,
+          isAndroid: true,
+        ),
+        'https://my-own-server.example.com',
+      );
+      expect(
+        effectiveBackendUrl(
+          'http://localhost:8000',
+          builtIn: builtIn,
+          isAndroid: false,
+        ),
+        'http://localhost:8000',
+      );
+    });
+
+    test('with nothing built in, the saved address is all there is', () {
+      expect(
+        effectiveBackendUrl(
+          'http://localhost:8000',
+          builtIn: '',
+          isAndroid: true,
+        ),
+        'http://localhost:8000',
+      );
+    });
+  });
 }
